@@ -1,17 +1,33 @@
-function registerAction(act) {
-  print(`NAMESPACE ${namespace}: registering action ${act.id} to ${act.key}`);
-  registerShortcut(act.id, act.key, act.key, () => {
-    print(`NAMESPACE ${namespace}: action ${act.id} triggered by ${act.key}`);
-    callDBus(
-      dbusName,
-      "/",
-      dbusName,
-      "Execute",
-      `NAMESPACE ${namespace}: action ${act.id} triggered by ${act.key}`,
-    );
+function kwinctlRegister(id, rule) {
+  print(`kwinctl: registering ${id} to ${rule.key}`);
+  registerShortcut(`kwinctl_${id}`, `Focus ${id} (KWinCTL)`, rule.key, () => {
+    const found = workspace
+      .windowList()
+      .find((w) => w.resourceClass === rule.cls);
+    if (found) {
+      print(
+        `kwinctl: found ${id}, changing ${workspace.activeWindow} to ${found}`,
+      );
+      workspace.activeWindow = found;
+    } else {
+      if (rule.auto) {
+        print(`kwinctl: ${id} not found, calling command ${rule.command}`);
+        callDBus(kwinctlDBus, "/", kwinctlDBus, "Execute", rule.command);
+      } else {
+        print(`kwinctl: ${id} not found, querying ${rule.command}`);
+        callDBus("org.kde.krunner", "/App", "org.kde.krunner.App", "display");
+        callDBus(
+          "org.kde.krunner",
+          "/App",
+          "org.kde.krunner.App",
+          "query",
+          rule.command,
+        );
+      }
+    }
   });
 }
 
-for (act of actions) {
-  registerAction(act);
-}
+Object.keys(kwinctlRules).forEach((id) =>
+  kwinctlRegister(id, kwinctlRules[id]),
+);

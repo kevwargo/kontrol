@@ -1,32 +1,18 @@
 #!/usr/bin/env python3
+
 import asyncio
 import json
 import signal
 from pathlib import Path
-from subprocess import run
 from tempfile import NamedTemporaryFile
-from uuid import uuid4
 
+import yaml
 from dbus_next import BusType
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method
 
 SCRIPT_PATH = Path(__file__).parent / "kwinctl.js"
-
-ACTIONS = [
-    {
-        "id": "kwinctl:msU",
-        "key": "Meta+Shift+U",
-    },
-    {
-        "id": "kwinctl:second",
-        "key": "Meta+Shift+P",
-    },
-    {
-        "id": "kwinctl:meta-e",
-        "key": "Meta+E",
-    },
-]
+RULES = yaml.safe_load((Path(__file__).parent / "rules.yaml").read_text())
 
 
 class KWinCtl(ServiceInterface):
@@ -71,17 +57,11 @@ class KWinCtl(ServiceInterface):
         return obj.get_interface(interface)
 
     async def _load_main_script(self):
-        namespace = str(uuid4())
-
-        with NamedTemporaryFile(mode="w+", prefix="kwinctl-js") as f:
-            print(f"dbusName = {self.NAME!r}", file=f)
-            print(f"namespace = {namespace!r};", file=f)
-            print(f"actions = {json.dumps(ACTIONS)};", file=f)
+        with NamedTemporaryFile(mode="w+", prefix="kwinctl-", suffix=".js") as f:
+            print(f"const kwinctlDBus = {self.NAME!r}", file=f)
+            print(f"const kwinctlRules = {json.dumps(RULES)};", file=f)
             f.write(SCRIPT_PATH.read_text())
             f.flush()
-
-            print(f"Script file {f.name} content before load:")
-            run(["cat", f.name])
 
             await self._cleanup_kglobalaccel()
             self.main_script = await self._load_script(f.name)

@@ -1,0 +1,21 @@
+konsole:
+  key: Meta+C
+  command: konsole
+  cls: org.kde.konsole
+brave:
+  key: Meta+F
+  command: brave
+  cls: brave-browser
+systemsettings:
+  key: Meta+Shift+S
+  cls: systemsettings
+  command: systemsettings
+  auto: true
+emacs:
+  key: Meta+E
+  cls: Emacs
+  command: emacs
+telegram:
+  key: Meta+T
+  cls: org.telegram.desktop
+  command: Telegram
