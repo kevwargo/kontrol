@@ -19,3 +19,10 @@ telegram:
   key: Meta+T
   cls: org.telegram.desktop
   command: Telegram
+krusader:
+  key: Meta+Shift+D
+  cls: org.kde.krusader
+  command: krusader
+okular:
+  key: Meta+O
+  cls: org.kde.okular
