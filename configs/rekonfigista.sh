@@ -19,3 +19,8 @@ insert = menu
 rightalt = leftalt
 EOF
 systemctl enable --now keyd
+
+# https://aur.archlinux.org/moc-pulse.git
+cat > ~/.moc/config <<EOF
+SoundDriver = ALSA:PULSEAUDIO:JACK:OSS
+EOF
