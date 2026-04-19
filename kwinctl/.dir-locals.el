@@ -1,1 +1,1 @@
-((javascript-mode . ((lsp-skip-current-file . t))))
+((js-mode . ((lsp-skip-current-file . t))))
