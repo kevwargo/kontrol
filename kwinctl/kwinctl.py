@@ -3,6 +3,7 @@
 import asyncio
 import json
 import signal
+from collections import defaultdict
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -10,9 +11,10 @@ import yaml
 from dbus_next import BusType
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method
+from PyQt6.QtGui import QKeySequence
 
 SCRIPT_PATH = Path(__file__).parent / "kwinctl.js"
-RULES = yaml.safe_load((Path(__file__).parent / "rules.yaml").read_text())
+RULES_PATH = Path(__file__).parent / "rules.yaml"
 
 
 class KWinCtl(ServiceInterface):
@@ -22,6 +24,9 @@ class KWinCtl(ServiceInterface):
         super().__init__(self.NAME)
         self.bus: MessageBus | None = None
         self.main_script = None
+        self.rules = None
+        self.rule_keys = None
+        self.remaps = []
         self._stop_event = asyncio.Event()
         self._shutting_down = False
 
@@ -30,16 +35,22 @@ class KWinCtl(ServiceInterface):
         print(f"execute({value})")
 
     async def run(self):
+        self._load_rules()
+
         loop = asyncio.get_running_loop()
 
         self._register_signals(loop)
-        await self._register_dbus_service()
-        await self._load_main_script()
+        try:
+            await self._register_dbus_service()
+            await self._remap_keys()
+            await self._load_main_script()
 
-        print("Service is running. Press Ctrl+C to exit.")
-        await self._stop_event.wait()
+            print("Service is running. Press Ctrl+C to exit.")
+            await self._stop_event.wait()
 
-        print("Run loop exiting...")
+            print("Run loop exiting...")
+        finally:
+            await self._shutdown()
 
     def _register_signals(self, loop: asyncio.AbstractEventLoop):
         for sig in (signal.SIGINT, signal.SIGTERM):
@@ -59,7 +70,7 @@ class KWinCtl(ServiceInterface):
     async def _load_main_script(self):
         with NamedTemporaryFile(mode="w+", prefix="kwinctl-", suffix=".js") as f:
             print(f"const kwinctlDBus = {self.NAME!r}", file=f)
-            print(f"const kwinctlRules = {json.dumps(RULES)};", file=f)
+            print(f"const kwinctlRules = {json.dumps(self.rules)};", file=f)
             f.write(SCRIPT_PATH.read_text())
             f.flush()
 
@@ -86,6 +97,71 @@ class KWinCtl(ServiceInterface):
             "org.kde.kwin.Script",
         )
 
+    def _load_rules(self):
+        self.rules = yaml.safe_load(RULES_PATH.read_text())
+
+        rule_keys = defaultdict(list)
+        for i, r in self.rules.items():
+            qk = QKeySequence(r["key"])
+            if not qk.toString():
+                raise ValueError(f"{r['key']!r} is not a valid Qt key")
+
+            rule_keys[qk[0].toCombined()].append(r | {"id": i})
+
+        errors = []
+        for k, rules in rule_keys.items():
+            if len(rules) > 1:
+                errors.append(f"Key {k} is used for multiple rules:\n{yaml.safe_dump(rules)}")
+
+        if errors:
+            raise ValueError("\n".join(errors))
+
+        self.rule_keys = {k: r[0] for k, r in rule_keys.items()}
+
+    async def _remap_keys(self):
+        kglobalaccel = await self._get_iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
+        components = await kglobalaccel.call_all_components()
+        for c in components:
+            component = await self._get_iface("org.kde.kglobalaccel", c, "org.kde.kglobalaccel.Component")
+            shortcuts = await component.call_all_shortcut_infos()
+            for s in shortcuts:
+                keys = s[6]
+                if all(k not in self.rule_keys for k in keys):
+                    continue
+
+                self.remaps.append(
+                    {
+                        "action_id": s[0],
+                        "action_name": s[1],
+                        "component_id": s[2],
+                        "component_name": s[3],
+                        "keys": keys,
+                        "new_keys": [k for k in keys if k not in self.rule_keys],
+                        "conflicts": [self.rule_keys[k] for k in keys if k in self.rule_keys],
+                    }
+                )
+
+        for remap in self.remaps:
+            old_keys = [QKeySequence(k).toString() for k in remap["keys"]]
+            new_keys = [QKeySequence(k).toString() for k in remap["new_keys"]]
+            print(
+                f"rebinding {remap['action_name']!r} in {remap['component_name']!r}: {old_keys} -> {new_keys}"
+                f" (conflicts with {remap['conflicts']})"
+            )
+            await kglobalaccel.call_set_foreign_shortcut_keys(
+                [remap["component_id"], remap["action_id"], remap["component_name"], remap["action_name"]],
+                [[[k, 0, 0, 0]] for k in remap["new_keys"]],
+            )
+
+    async def _restore_remaps(self):
+        kglobalaccel = await self._get_iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
+        for remap in self.remaps:
+            print(f"restoring {remap}")
+            await kglobalaccel.call_set_foreign_shortcut_keys(
+                [remap["component_id"], remap["action_id"], remap["component_name"], remap["action_name"]],
+                [[[k, 0, 0, 0]] for k in remap["keys"]],
+            )
+
     async def _shutdown(self, sig=None):
         if self._shutting_down:
             return
@@ -105,6 +181,11 @@ class KWinCtl(ServiceInterface):
                     await self._cleanup_kglobalaccel()
                 except Exception as e:
                     print(f"Error cleaning up kglobalaccel: {e}")
+
+                try:
+                    await self._restore_remaps()
+                except Exception as e:
+                    print(f"Restoring remapped keys: {e}")
 
                 try:
                     print("Releasing D-Bus name...")
