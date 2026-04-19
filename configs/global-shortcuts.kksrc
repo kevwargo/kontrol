@@ -1,0 +1,11 @@
+[Custom Commands][net.local.mocp.desktop]
+Exec=mocp -G
+Name=mocp-toggle-pause
+
+[net.local.mocp.desktop][Global Shortcuts]
+_launch=Meta+Q
+
+[org.kde.konsole.desktop][Global Shortcuts]
+NewTab=
+NewWindow=
+_launch=
