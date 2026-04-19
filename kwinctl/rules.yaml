@@ -7,7 +7,7 @@ brave:
   command: brave
   cls: brave-browser
 systemsettings:
-  key: Meta+Shift+S
+  key: Meta+S
   cls: systemsettings
   command: systemsettings
   auto: true

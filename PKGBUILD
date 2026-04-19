@@ -1,0 +1,20 @@
+pkgname=kontrol
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A set of tools to configure Plasma 6 (Wayland) in a predictable way"
+arch=("any")
+license=("MIT")
+
+depends=("python" "python-dbus-next" "python-yaml" "python-pyqt6")
+
+source=("kontrol::git+file://${PWD}")
+sha256sums=("SKIP")
+
+package() {
+    cd $srcdir/kontrol
+    echo "running package cwd=`pwd` s=$srcdir p=$pkgdir"
+    install -Dm755 kwinctl/kwinctl.py ${pkgdir}/usr/bin/kwinctl
+    install -Dm644 kwinctl/kwinctl.service ${pkgdir}/usr/lib/systemd/user/kwinctl.service
+    install -Dm644 kwinctl/kwinctl.js ${pkgdir}/usr/share/kwinctl/script.js
+    install -Dm644 kwinctl/rules.yaml ${pkgdir}/usr/share/kwinctl/rules.yaml
+}

@@ -5,6 +5,7 @@ import json
 import signal
 from collections import defaultdict
 from pathlib import Path
+from subprocess import Popen
 from tempfile import NamedTemporaryFile
 
 import yaml
@@ -13,8 +14,9 @@ from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method
 from PyQt6.QtGui import QKeySequence
 
-SCRIPT_PATH = Path(__file__).parent / "kwinctl.js"
-RULES_PATH = Path(__file__).parent / "rules.yaml"
+SCRIPT_PATH = Path("/usr/share/kwinctl/script.js")
+DEFAULT_RULES_PATH = Path("/usr/share/kwinctl/rules.yaml")
+RULES_PATH = Path("~/.local/share/kwinctl/rules.yaml").expanduser()
 
 
 class KWinCtl(ServiceInterface):
@@ -32,7 +34,7 @@ class KWinCtl(ServiceInterface):
 
     @method()
     def Execute(self, value: "s"):  # noqa:F821
-        print(f"execute({value})")
+        Popen(value, shell=True)
 
     async def run(self):
         self._load_rules()
@@ -98,6 +100,11 @@ class KWinCtl(ServiceInterface):
         )
 
     def _load_rules(self):
+        if not RULES_PATH.exists():
+            print(f"{RULES_PATH} doesn't exit, copying default {DEFAULT_RULES_PATH}")
+            RULES_PATH.parent.mkdir(parents=True, exist_ok=True)
+            RULES_PATH.write_text(DEFAULT_RULES_PATH.read_text())
+
         self.rules = yaml.safe_load(RULES_PATH.read_text())
 
         rule_keys = defaultdict(list)

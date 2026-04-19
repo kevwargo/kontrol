@@ -6,10 +6,10 @@ function kwinctlRegister(id, rule) {
       .find((w) => w.resourceClass === rule.cls);
     if (found) {
       print(
-        `kwinctl: found ${id}, changing ${workspace.activeWindow} to ${found}`,
+        `kwinctl: found ${id}, switching from ${workspace.activeWindow} to ${found}`,
       );
       workspace.activeWindow = found;
-    } else {
+    } else if (rule.command) {
       if (rule.auto) {
         print(`kwinctl: ${id} not found, calling command ${rule.command}`);
         callDBus(kwinctlDBus, "/", kwinctlDBus, "Execute", rule.command);

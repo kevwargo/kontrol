@@ -1,0 +1,8 @@
+[Unit]
+Description=KWin Control
+
+[Service]
+ExecStart=/usr/bin/kwinctl
+
+[Install]
+WantedBy=plasma-kwin_wayland.service
