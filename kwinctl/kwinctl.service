@@ -1,8 +1,10 @@
 [Unit]
 Description=KWin Control
+After=plasma-workspace.target
+BindsTo=plasma-workspace.target
 
 [Service]
 ExecStart=/usr/bin/kwinctl
 
 [Install]
-WantedBy=plasma-kwin_wayland.service
+WantedBy=plasma-workspace.target
