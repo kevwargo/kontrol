@@ -10,11 +10,12 @@ SERVICE = "org.kde.konsole"
 
 
 async def main():
+    func = {
+        "set-profile": set_profile,
+    }[sys.argv[1]]
+
     bus = await MessageBus(bus_type=BusType.SESSION).connect()
     try:
-        func = {
-            "set-profile": set_profile,
-        }[sys.argv[1]]
         await func(bus, *sys.argv[2:])
     finally:
         bus.disconnect()
