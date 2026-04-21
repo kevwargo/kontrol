@@ -12,18 +12,16 @@ from dbus_next.service import ServiceInterface, method
 
 NAME = "org.kevwargo.kwinctl.inspect"
 
-SCRIPT = """
-let value;
-try {{
-  value = {expr};
-  if (typeof value !== "string")
-    value = typeof value === "undefined" ? "" : JSON.stringify(value);
-  print("value", typeof value, value);
-}} catch (e) {{
-  value = e;
-  print("error", e);
-}}
-callDBus("{name}", "/", "{name}", "Return", "{id}", value);
+SCRIPT = """let value;
+try {
+  value = %s;
+  if (typeof value !== "string") {
+    value = JSON.stringify(value);
+    if (typeof value === "undefined") value = "";
+  }
+} catch (e) {
+  value = `${e}`;
+}
 """
 
 
@@ -41,13 +39,17 @@ class Eval(ServiceInterface):
 
         try:
             await self._run()
-            await self._stop_event.wait()
         finally:
             await self.bus.release_name(NAME)
 
     async def _run(self):
         with NamedTemporaryFile(mode="w+", prefix="kwin-eval-", suffix=".js") as f:
-            body = SCRIPT.format(name=NAME, id=self.id_, expr=sys.argv[1])
+            expr = sys.argv[1]
+            if ";" in expr:
+                expr = "(() => { %s%s return r; })()" % (expr, "" if expr.endswith(";") else ";")
+
+            body = (SCRIPT % expr) + f'callDBus("{NAME}", "/", "{NAME}", "Return", "{self.id_}", value);'
+
             f.write(body)
             f.flush()
 
@@ -55,6 +57,7 @@ class Eval(ServiceInterface):
             script_id = await scripting.call_load_script(f.name)
             script = await self._get_iface("org.kde.KWin", f"/Scripting/Script{script_id}", "org.kde.kwin.Script")
             await script.call_run()
+            await self._stop_event.wait()
             await script.call_stop()
 
     async def _get_iface(self, service: str, path: str, interface: str):
