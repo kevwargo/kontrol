@@ -1,5 +1,5 @@
 pkgname=kontrol
-pkgver=0.2
+pkgver=0.2.1
 pkgrel=1
 pkgdesc="A set of tools to configure Plasma 6 (Wayland) in a predictable way"
 arch=(any)
@@ -13,6 +13,7 @@ sha256sums=(SKIP)
 package() {
     # KWinCTL
     install -Dm755 kwinctl/kwinctl.py ${pkgdir}/usr/bin/kwinctl
+    install -Dm755 kwinctl/kwinjs-inspect.py ${pkgdir}/usr/bin/kwinjs-inspect
     install -Dm644 kwinctl/kwinctl.service ${pkgdir}/usr/lib/systemd/user/kwinctl.service
     install -Dm644 kwinctl/kwinctl.js ${pkgdir}/usr/share/kwinctl/script.js
     install -Dm644 kwinctl/rules.yaml ${pkgdir}/usr/share/kwinctl/rules.yaml
