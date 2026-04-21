@@ -5,4 +5,4 @@ build:
 
 .PHONY: install
 install:
-	makepkg --dir pacman --install
+	makepkg --dir pacman --install --noconfirm

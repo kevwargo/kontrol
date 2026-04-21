@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import signal
 from collections import defaultdict
 from pathlib import Path
@@ -17,6 +18,9 @@ from PyQt6.QtGui import QKeySequence
 SCRIPT_PATH = Path("/usr/share/kwinctl/script.js")
 DEFAULT_RULES_PATH = Path("/usr/share/kwinctl/rules.yaml")
 RULES_PATH = Path("~/.local/share/kwinctl/rules.yaml").expanduser()
+
+logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(message)s")
+logger = logging.getLogger("kwinctl")
 
 
 class KWinCtl(ServiceInterface):
@@ -47,10 +51,10 @@ class KWinCtl(ServiceInterface):
             await self._remap_keys()
             await self._load_main_script()
 
-            print("Service is running. Press Ctrl+C to exit.")
+            logger.debug("Service is running. Press Ctrl+C to exit.")
             await self._stop_event.wait()
 
-            print("Run loop exiting...")
+            logger.debug("Run loop exiting...")
         finally:
             await self._shutdown()
 
@@ -62,7 +66,7 @@ class KWinCtl(ServiceInterface):
         self.bus = await MessageBus(bus_type=BusType.SESSION).connect()
         self.bus.export("/", self)
         await self.bus.request_name(self.NAME)
-        print(f"{self.NAME} D-Bus service running...")
+        logger.info(f"{self.NAME} D-Bus service running...")
 
     async def _get_iface(self, service: str, path: str, interface: str):
         introspection = await self.bus.introspect(service, path)
@@ -81,17 +85,17 @@ class KWinCtl(ServiceInterface):
             await self.main_script.call_run()
 
     async def _cleanup_kglobalaccel(self):
-        print("calling cleanUp on org.kde.kglobalaccel /component/kwin")
+        logger.info("calling cleanUp on org.kde.kglobalaccel /component/kwin")
         comp = await self._get_iface("org.kde.kglobalaccel", "/component/kwin", "org.kde.kglobalaccel.Component")
         res = await comp.call_clean_up()
         if res:
-            print("leftover KWin shortcuts cleaned up")
+            logger.info("leftover KWin shortcuts cleaned up")
 
     async def _load_script(self, path: str):
         scripting = await self._get_iface("org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting")
 
         script_id = await scripting.call_load_script(path)
-        print(f"loaded script id: {script_id}")
+        logger.debug(f"loaded script id: {script_id}")
 
         return await self._get_iface(
             "org.kde.KWin",
@@ -101,7 +105,7 @@ class KWinCtl(ServiceInterface):
 
     def _load_rules(self):
         if not RULES_PATH.exists():
-            print(f"{RULES_PATH} doesn't exit, copying default {DEFAULT_RULES_PATH}")
+            logger.info(f"{RULES_PATH} doesn't exit, copying default {DEFAULT_RULES_PATH}")
             RULES_PATH.parent.mkdir(parents=True, exist_ok=True)
             RULES_PATH.write_text(DEFAULT_RULES_PATH.read_text())
 
@@ -151,7 +155,7 @@ class KWinCtl(ServiceInterface):
         for remap in self.remaps:
             old_keys = [QKeySequence(k).toString() for k in remap["keys"]]
             new_keys = [QKeySequence(k).toString() for k in remap["new_keys"]]
-            print(
+            logger.info(
                 f"rebinding {remap['action_name']!r} in {remap['component_name']!r}: {old_keys} -> {new_keys}"
                 f" (conflicts with {remap['conflicts']})"
             )
@@ -163,7 +167,7 @@ class KWinCtl(ServiceInterface):
     async def _restore_remaps(self):
         kglobalaccel = await self._get_iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
         for remap in self.remaps:
-            print(f"restoring {remap}")
+            logger.info(f"restoring {remap}")
             await kglobalaccel.call_set_foreign_shortcut_keys(
                 [remap["component_id"], remap["action_id"], remap["component_name"], remap["action_name"]],
                 [[[k, 0, 0, 0]] for k in remap["keys"]],
@@ -174,44 +178,44 @@ class KWinCtl(ServiceInterface):
             return
         self._shutting_down = True
 
-        print(f"Shutdown initiated (signal={sig})")
+        logger.info(f"Shutdown initiated (signal={sig})")
 
         try:
             if self.main_script is not None:
                 try:
-                    print("Stopping KWin script...")
+                    logger.info("Stopping KWin script...")
                     await self.main_script.call_stop()
                 except Exception as e:
-                    print(f"Error stopping script: {e}")
+                    logger.error(f"Error stopping script: {e}")
             if self.bus is not None:
                 try:
                     await self._cleanup_kglobalaccel()
                 except Exception as e:
-                    print(f"Error cleaning up kglobalaccel: {e}")
+                    logger.error(f"Error cleaning up kglobalaccel: {e}")
 
                 try:
                     await self._restore_remaps()
                 except Exception as e:
-                    print(f"Restoring remapped keys: {e}")
+                    logger.error(f"Restoring remapped keys: {e}")
 
                 try:
-                    print("Releasing D-Bus name...")
+                    logger.info("Releasing D-Bus name...")
                     await self.bus.release_name(self.NAME)
                 except Exception as e:
-                    print(f"Error releasing name: {e}")
+                    logger.error(f"Error releasing name: {e}")
 
                 try:
-                    print("Disconnecting from D-Bus...")
+                    logger.info("Disconnecting from D-Bus...")
                     self.bus.disconnect()
                 except Exception as e:
-                    print(f"Error disconnecting bus: {e}")
+                    logger.error(f"Error disconnecting bus: {e}")
         finally:
             self._stop_event.set()
-            print("Shutdown complete.")
+            logger.info("Shutdown complete.")
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(KWinCtl().run())
     except KeyboardInterrupt:
-        print("Forced exit")
+        logger.error("Forced exit")
