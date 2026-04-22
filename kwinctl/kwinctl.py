@@ -4,13 +4,14 @@ import asyncio
 import json
 import logging
 import signal
+import sys
 from collections import defaultdict
 from pathlib import Path
 from subprocess import Popen
 from tempfile import NamedTemporaryFile
 
 import yaml
-from dbus_next import BusType
+from dbus_next import BusType, Message
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method
 from PyQt6.QtGui import QKeySequence
@@ -18,8 +19,15 @@ from PyQt6.QtGui import QKeySequence
 SCRIPT_PATH = Path("/usr/share/kwinctl/script.js")
 DEFAULT_RULES_PATH = Path("/usr/share/kwinctl/rules.yaml")
 RULES_PATH = Path("~/.local/share/kwinctl/rules.yaml").expanduser()
+SCRIPT_UNIQUE_NAME = "kwinctl"
 
-logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(message)s")
+logfmt = "[%(levelname)s] %(message)s"
+
+if sys.stdin.isatty() and sys.stdout.isatty() and sys.stderr.isatty():
+    logfmt = "[%(levelname)s] %(asctime)s %(message)s"
+    SCRIPT_PATH = Path(__file__).parent / "kwinctl.js"
+
+logging.basicConfig(level=logging.DEBUG, format=logfmt)
 logger = logging.getLogger("kwinctl")
 
 
@@ -75,13 +83,13 @@ class KWinCtl(ServiceInterface):
 
     async def _load_main_script(self):
         with NamedTemporaryFile(mode="w+", prefix="kwinctl-", suffix=".js") as f:
-            print(f"const kwinctlDBus = {self.NAME!r}", file=f)
-            print(f"const kwinctlRules = {json.dumps(self.rules)};", file=f)
+            print(f"const DBUS_NAME = {self.NAME!r}", file=f)
+            print(f"const RULES = {json.dumps(self.rules)};", file=f)
             f.write(SCRIPT_PATH.read_text())
             f.flush()
 
             await self._cleanup_kglobalaccel()
-            self.main_script = await self._load_script(f.name)
+            self.main_script = await self._load_script_file(f.name)
             await self.main_script.call_run()
 
     async def _cleanup_kglobalaccel(self):
@@ -91,10 +99,20 @@ class KWinCtl(ServiceInterface):
         if res:
             logger.info("leftover KWin shortcuts cleaned up")
 
-    async def _load_script(self, path: str):
-        scripting = await self._get_iface("org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting")
+    async def _load_script_file(self, path: str):
+        msg = Message(
+            destination="org.kde.KWin",
+            path="/Scripting",
+            interface="org.kde.kwin.Scripting",
+            member="loadScript",
+            signature="ss",
+            body=[path, SCRIPT_UNIQUE_NAME],
+        )
+        script_id = (await self.bus.call(msg)).body[0]
 
-        script_id = await scripting.call_load_script(path)
+        if script_id < 0:
+            raise RuntimeError(f"KWin script {SCRIPT_UNIQUE_NAME!r} is already running")
+
         logger.debug(f"loaded script id: {script_id}")
 
         return await self._get_iface(
@@ -109,15 +127,15 @@ class KWinCtl(ServiceInterface):
             RULES_PATH.parent.mkdir(parents=True, exist_ok=True)
             RULES_PATH.write_text(DEFAULT_RULES_PATH.read_text())
 
-        self.rules = yaml.safe_load(RULES_PATH.read_text())
+        self.rules = [r | {"id": k} for k, r in yaml.safe_load(RULES_PATH.read_text()).items()]
 
         rule_keys = defaultdict(list)
-        for i, r in self.rules.items():
+        for r in self.rules:
             qk = QKeySequence(r["key"])
             if not qk.toString():
                 raise ValueError(f"{r['key']!r} is not a valid Qt key")
 
-            rule_keys[qk[0].toCombined()].append(r | {"id": i})
+            rule_keys[qk[0].toCombined()].append(r)
 
         errors = []
         for k, rules in rule_keys.items():
