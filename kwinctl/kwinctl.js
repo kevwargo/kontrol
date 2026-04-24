@@ -42,10 +42,19 @@ function triggerRule({ id, key, candidates, command, auto }) {
   }
 }
 
+function matchRule(rule, window) {
+  if (rule.cls && rule.cls !== window.resourceClass) return false;
+  if (rule.caption && rule.caption !== window.caption) return false;
+
+  print(`kwinctl matcher: ${wfmt(window)} matched by ${rule}`);
+
+  return true;
+}
+
 function onNewWindow(window) {
   if (!window.normalWindow) return;
 
-  const rule = RULES.find((r) => r.cls === window.resourceClass);
+  const rule = RULES.find((r) => matchRule(r, window));
   if (!rule) {
     print(`${wfmt(window)} is not matched by any rule, ignoring it`);
     return;

@@ -2,6 +2,7 @@ konsole:
   key: Meta+C
   command: konsole
   cls: org.kde.konsole
+  auto: true
 brave:
   key: Meta+F
   command: brave
@@ -26,3 +27,22 @@ krusader:
 okular:
   key: Meta+O
   cls: org.kde.okular
+vlc:
+  key: Meta+V
+  cls: vlc
+kdenlive:
+  key: Meta+K
+  cls: org.kde.kdenlive
+  command: kdenlive
+mocp:
+  key: Meta+Shift+Q
+  cls: foot
+  caption: MOCP
+  command: foot --window-size-pixels=1024x768 --title MOCP mocp
+  auto: true
+htop:
+  key: Meta+Shift+C
+  cls: foot
+  caption: HTOP
+  command: foot --maximized --title HTOP htop
+  auto: true
