@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
 
 import asyncio
-import os
-import shlex
-import signal
 import sys
 from functools import cached_property
 from pathlib import Path
+from subprocess import DEVNULL, Popen
 
-from dbus_next import BusType, Message
+from dbus_next import BusType, DBusError, Message
 from dbus_next.aio import MessageBus, ProxyInterface
-
-DBUS_SERVICE = "org.kde.konsole"
 
 
 async def main():
@@ -25,11 +21,14 @@ class Bus(MessageBus):
 
 
 class KonsoleService:
+    DBUS_GLOBAL = "org.kde.konsole"
+
     def __init__(self):
         self._commands = {
             "set-profile": self.set_profile,
             "cd": self.chdir,
         }
+        self._active_service = self.DBUS_GLOBAL
 
     async def run(self, cmd: str, args: list[str]):
         cmd = self._commands[cmd]
@@ -37,7 +36,11 @@ class KonsoleService:
         await cmd(*args)
 
     async def set_profile(self, profile: str):
-        for s in await self._get_sub_ifaces("/Sessions", "org.kde.konsole.Session"):
+        session_ifaces = await self._get_sub_ifaces("/Sessions", "org.kde.konsole.Session")
+        if session_ifaces is None:
+            return
+
+        for s in session_ifaces:
             await s.call_set_profile(profile)
         for w in await self._window_list():
             await w.set_profile(profile)
@@ -48,12 +51,25 @@ class KonsoleService:
         if isinstance(candidate, Session):
             await candidate.window.set_session(candidate.id)
             await candidate.window.activate()
-        else:
+        elif isinstance(candidate, Window):
             await candidate.new_session(path)
             await candidate.activate()
+        else:
+            p = Popen(
+                ["konsole", "--workdir", str(path)],
+                stdin=DEVNULL,
+                stdout=DEVNULL,
+                stderr=DEVNULL,
+                start_new_session=True,
+            )
+            print(f"No active Konsole instance found, started new {p.pid}")
 
-    async def _find_dir_candidate(self, path: Path) -> Session | Window:
-        for window in await self._window_list():
+    async def _find_dir_candidate(self, path: Path) -> Session | Window | None:
+        window_list = await self._window_list()
+        if window_list is None:
+            return None
+
+        for window in window_list:
             for session in await window.session_list():
                 if session.fpid != session.pid or session.exe_name != "bash":
                     continue
@@ -63,28 +79,55 @@ class KonsoleService:
 
         return window
 
-    async def _window_list(self) -> list[Window]:
-        return [
-            Window(self._bus, w)
-            for w in await self._get_sub_ifaces("/Windows", "org.kde.konsole.Window")
-        ]
+    async def _window_list(self) -> list[Window] | None:
+        window_ifaces = await self._get_sub_ifaces("/Windows", "org.kde.konsole.Window")
+        if window_ifaces is None:
+            return None
 
-    async def _get_sub_ifaces(self, base_path: str, iface_name: str) -> list[ProxyInterface]:
+        return [Window(self._bus, self._active_service, w) for w in window_ifaces]
+
+    async def _get_sub_ifaces(self, base_path: str, iface_name: str) -> list[ProxyInterface] | None:
+        base_intro = None
+
+        try:
+            base_intro = await self._bus.introspect(self._active_service, base_path)
+            print(f"Found Konsole DBus service {self._active_service}")
+        except DBusError:
+            print(f"Konsole DBus service {self._active_service} is not available")
+
+        if base_intro is None:
+            dbus_iface = await self._bus.get_proxy_iface(
+                "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus"
+            )
+            try:
+                self._active_service = next(
+                    n for n in await dbus_iface.call_list_names() if n.startswith(self.DBUS_GLOBAL)
+                )
+                print(f"Found Konsole DBus service {self._active_service}")
+            except StopIteration:
+                pass
+            else:
+                base_intro = await self._bus.introspect(self._active_service, base_path)
+
+        if base_intro is None:
+            return None
+
         ifaces = []
-
-        base = await self._bus.introspect(DBUS_SERVICE, base_path)
-        for n in base.nodes:
+        for n in base_intro.nodes:
             ifaces.append(
-                await self._bus.get_proxy_iface(DBUS_SERVICE, f"{base_path}/{n.name}", iface_name)
+                await self._bus.get_proxy_iface(
+                    self._active_service, f"{base_path}/{n.name}", iface_name
+                )
             )
 
         return ifaces
 
 
 class Window:
-    def __init__(self, bus: Bus, iface: ProxyInterface):
+    def __init__(self, bus: Bus, svc: str, iface: ProxyInterface):
         self._bus = bus
         self._iface = iface
+        self._service = svc
         self.id = int(iface.path.split("/")[-1])
 
     async def set_profile(self, profile: str):
@@ -92,7 +135,7 @@ class Window:
 
     async def session_list(self) -> list[Session]:
         return [
-            await Session(self._bus, self, sess_id).resolve()
+            await Session(self._bus, self._service, self, sess_id).resolve()
             for sess_id in await self._iface.call_session_list()
         ]
 
@@ -104,7 +147,7 @@ class Window:
 
     async def new_session(self, working_dir: Path | str):
         msg = Message(
-            destination=DBUS_SERVICE,
+            destination=self._service,
             path=self._iface.path,
             interface=self._iface.introspection.name,
             member="newSession",
@@ -115,16 +158,16 @@ class Window:
 
 
 class Session:
-    def __init__(self, bus: Bus, window: Window, sess_id: str):
+    def __init__(self, bus: Bus, svc: str, window: Window, sess_id: str):
         self._bus = bus
         self.window = window
+        self._service = svc
         self.id = int(sess_id)
 
     async def resolve(self) -> Session:
-        args = DBUS_SERVICE, f"/Sessions/{self.id}"
-        self._iface = self._bus.get_proxy_object(
-            *args, await self._bus.introspect(*args)
-        ).get_interface("org.kde.konsole.Session")
+        self._iface = await self._bus.get_proxy_iface(
+            self._service, f"/Sessions/{self.id}", "org.kde.konsole.Session"
+        )
 
         self.fpid = await self._iface.call_foreground_process_id()
         self.pid = await self._iface.call_process_id()
