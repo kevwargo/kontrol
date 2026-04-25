@@ -9,5 +9,6 @@ dependencies = [
     "pyqt6>=6.11.0",
     "pyyaml>=6.0.3",
 ]
+
 [tool.black]
-line-length=120
+line-length=100
