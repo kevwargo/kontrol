@@ -94,7 +94,9 @@ class KWinCtl(ServiceInterface):
 
     async def _cleanup_kglobalaccel(self):
         logger.info("calling cleanUp on org.kde.kglobalaccel /component/kwin")
-        comp = await self._get_iface("org.kde.kglobalaccel", "/component/kwin", "org.kde.kglobalaccel.Component")
+        comp = await self._get_iface(
+            "org.kde.kglobalaccel", "/component/kwin", "org.kde.kglobalaccel.Component"
+        )
         res = await comp.call_clean_up()
         if res:
             logger.info("leftover KWin shortcuts cleaned up")
@@ -148,10 +150,14 @@ class KWinCtl(ServiceInterface):
         self.rule_keys = {k: r[0] for k, r in rule_keys.items()}
 
     async def _remap_keys(self):
-        kglobalaccel = await self._get_iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
+        kglobalaccel = await self._get_iface(
+            "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel"
+        )
         components = await kglobalaccel.call_all_components()
         for c in components:
-            component = await self._get_iface("org.kde.kglobalaccel", c, "org.kde.kglobalaccel.Component")
+            component = await self._get_iface(
+                "org.kde.kglobalaccel", c, "org.kde.kglobalaccel.Component"
+            )
             shortcuts = await component.call_all_shortcut_infos()
             for s in shortcuts:
                 keys = s[6]
@@ -178,16 +184,28 @@ class KWinCtl(ServiceInterface):
                 f" (conflicts with {remap['conflicts']})"
             )
             await kglobalaccel.call_set_foreign_shortcut_keys(
-                [remap["component_id"], remap["action_id"], remap["component_name"], remap["action_name"]],
+                [
+                    remap["component_id"],
+                    remap["action_id"],
+                    remap["component_name"],
+                    remap["action_name"],
+                ],
                 [[[k, 0, 0, 0]] for k in remap["new_keys"]],
             )
 
     async def _restore_remaps(self):
-        kglobalaccel = await self._get_iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
+        kglobalaccel = await self._get_iface(
+            "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel"
+        )
         for remap in self.remaps:
             logger.info(f"restoring {remap}")
             await kglobalaccel.call_set_foreign_shortcut_keys(
-                [remap["component_id"], remap["action_id"], remap["component_name"], remap["action_name"]],
+                [
+                    remap["component_id"],
+                    remap["action_id"],
+                    remap["component_name"],
+                    remap["action_name"],
+                ],
                 [[[k, 0, 0, 0]] for k in remap["keys"]],
             )
 
