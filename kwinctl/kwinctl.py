@@ -6,6 +6,7 @@ import logging
 import signal
 import sys
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 from subprocess import Popen
 from tempfile import NamedTemporaryFile
@@ -30,6 +31,8 @@ if sys.stdin.isatty() and sys.stdout.isatty() and sys.stderr.isatty():
 logging.basicConfig(level=logging.DEBUG, format=logfmt)
 logger = logging.getLogger("kwinctl")
 
+SHORTCUTS_LOG = Path("~/.local/share/kwinctl/shortcuts.log").expanduser()
+
 
 class KWinCtl(ServiceInterface):
     NAME = "org.kevwargo.kwinctl"
@@ -46,7 +49,8 @@ class KWinCtl(ServiceInterface):
 
     @method()
     def Execute(self, value: "s"):  # noqa:F821
-        Popen(value, shell=True)
+        p = Popen(value, shell=True, start_new_session=True)
+        logger.info(f"Started command [{p.pid}]{value!r}")
 
     async def run(self):
         self._load_rules()
@@ -83,7 +87,7 @@ class KWinCtl(ServiceInterface):
 
     async def _load_main_script(self):
         with NamedTemporaryFile(mode="w+", prefix="kwinctl-", suffix=".js") as f:
-            print(f"const DBUS_NAME = {self.NAME!r}", file=f)
+            print(f"const DBUS_NAME = {self.NAME!r};", file=f)
             print(f"const RULES = {json.dumps(self.rules)};", file=f)
             f.write(SCRIPT_PATH.read_text())
             f.flush()
@@ -137,12 +141,11 @@ class KWinCtl(ServiceInterface):
 
             rule_keys[qk[0].toCombined()].append(r)
 
-        errors = []
-        for k, rules in rule_keys.items():
-            if len(rules) > 1:
-                errors.append(f"Key {k} is used for multiple rules:\n{yaml.safe_dump(rules)}")
-
-        if errors:
+        if errors := [
+            f"Key {k} is used for multiple rules:\n{yaml.safe_dump(rules)}"
+            for k, rules in rule_keys.items()
+            if len(rules) > 1
+        ]:
             raise ValueError("\n".join(errors))
 
         self.rule_keys = {k: r[0] for k, r in rule_keys.items()}
@@ -153,6 +156,15 @@ class KWinCtl(ServiceInterface):
         for c in components:
             component = await self._get_iface("org.kde.kglobalaccel", c, "org.kde.kglobalaccel.Component")
             shortcuts = await component.call_all_shortcut_infos()
+
+            with SHORTCUTS_LOG.open("a") as f:
+                print(
+                    datetime.now().isoformat(timespec="milliseconds"),
+                    c,
+                    json.dumps(shortcuts, indent=2),
+                    file=f,
+                )
+
             for s in shortcuts:
                 keys = s[6]
                 if all(k not in self.rule_keys for k in keys):
