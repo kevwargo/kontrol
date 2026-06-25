@@ -114,11 +114,7 @@ class KonsoleService:
 
         ifaces = []
         for n in base_intro.nodes:
-            ifaces.append(
-                await self._bus.get_proxy_iface(
-                    self._active_service, f"{base_path}/{n.name}", iface_name
-                )
-            )
+            ifaces.append(await self._bus.get_proxy_iface(self._active_service, f"{base_path}/{n.name}", iface_name))
 
         return ifaces
 
@@ -143,7 +139,10 @@ class Window:
         await self._iface.call_set_current_session(sess_id)
 
     async def activate(self):
-        await self._iface.call_request_activate()
+        try:
+            await self._iface.call_request_activate()
+        except AttributeError:
+            print("The current version of konsole does not support 'request_activate' DBus call")
 
     async def new_session(self, working_dir: Path | str):
         msg = Message(
@@ -165,9 +164,7 @@ class Session:
         self.id = int(sess_id)
 
     async def resolve(self) -> Session:
-        self._iface = await self._bus.get_proxy_iface(
-            self._service, f"/Sessions/{self.id}", "org.kde.konsole.Session"
-        )
+        self._iface = await self._bus.get_proxy_iface(self._service, f"/Sessions/{self.id}", "org.kde.konsole.Session")
 
         self.fpid = await self._iface.call_foreground_process_id()
         self.pid = await self._iface.call_process_id()
