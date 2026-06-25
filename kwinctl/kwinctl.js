@@ -1,6 +1,6 @@
 /*
   injected from python:
-  RULES: [Rule];
+  RULES: Rule[];
   DBUS_NAME: string;
 */
 
