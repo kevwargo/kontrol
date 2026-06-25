@@ -46,3 +46,6 @@ htop:
   caption: HTOP
   command: foot --maximized --title HTOP htop
   auto: true
+okteta:
+  key: Meta+Shift+O
+  cls: org.kde.okteta
