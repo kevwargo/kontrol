@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 import signal
 import sys
 from collections import defaultdict
@@ -49,15 +50,13 @@ class KWinCtl(ServiceInterface):
 
     @method()
     def Execute(self, value: "s"):  # noqa:F821
-        p = Popen(value, shell=True, start_new_session=True)
+        p = Popen(value, shell=True)
         logger.info(f"Started command [{p.pid}]{value!r}")
 
     async def run(self):
         self._load_rules()
+        self._register_signals()
 
-        loop = asyncio.get_running_loop()
-
-        self._register_signals(loop)
         try:
             await self._register_dbus_service()
             await self._remap_keys()
@@ -70,9 +69,27 @@ class KWinCtl(ServiceInterface):
         finally:
             await self._shutdown()
 
-    def _register_signals(self, loop: asyncio.AbstractEventLoop):
+    def _register_signals(self):
+        loop = asyncio.get_running_loop()
+
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(self._shutdown(s)))
+
+        loop.add_signal_handler(signal.SIGCHLD, self._reap_children)
+
+    def _reap_children(self, s=None):
+        while True:
+            try:
+                pid, status = os.waitpid(-1, os.WNOHANG)
+            except ChildProcessError as e:
+                logger.info(f"reaped last child: {e}")
+                break
+
+            logger.info(f"reaped [{pid}]({status})")
+
+            if pid == 0:
+                logger.info("reaped last child")
+                break
 
     async def _register_dbus_service(self):
         self.bus = await MessageBus(bus_type=BusType.SESSION).connect()
