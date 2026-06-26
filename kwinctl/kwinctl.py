@@ -265,7 +265,9 @@ class Bus(MessageBus):
         kgl = await self._get_iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
         names = await kgl.call_all_components()
         for name in names:
-            c = await self._get_iface("org.kde.kglobalaccel", name, "org.kde.kglobalaccel.Component")
+            c = await self._get_iface(
+                "org.kde.kglobalaccel", name, "org.kde.kglobalaccel.Component"
+            )
             yield name, c
 
     async def kgl_set_keys(self, *args):
@@ -273,7 +275,9 @@ class Bus(MessageBus):
         return await kgl.call_set_foreign_shortcut_keys(*args)
 
     async def kgl_cleanup_kwin(self):
-        comp = await self._get_iface("org.kde.kglobalaccel", "/component/kwin", "org.kde.kglobalaccel.Component")
+        comp = await self._get_iface(
+            "org.kde.kglobalaccel", "/component/kwin", "org.kde.kglobalaccel.Component"
+        )
         return await comp.call_clean_up()
 
     async def kwin_load_script(self, script_id: int):
