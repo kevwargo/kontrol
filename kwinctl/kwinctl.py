@@ -40,7 +40,7 @@ class KWinCtl(ServiceInterface):
 
     def __init__(self):
         super().__init__(self.NAME)
-        self.bus: MessageBus | None = None
+        self.bus: Bus | None = None
         self.main_script = None
         self.rules = None
         self.rule_keys = None
@@ -50,7 +50,7 @@ class KWinCtl(ServiceInterface):
 
     @method()
     def Execute(self, value: "s"):  # noqa:F821
-        p = Popen(value, shell=True)
+        p = Popen(value, shell=True, start_new_session=True)
         logger.info(f"Started command [{p.pid}]{value!r}")
 
     async def run(self):
@@ -92,15 +92,10 @@ class KWinCtl(ServiceInterface):
                 break
 
     async def _register_dbus_service(self):
-        self.bus = await MessageBus(bus_type=BusType.SESSION).connect()
+        self.bus = await Bus(bus_type=BusType.SESSION).connect()
         self.bus.export("/", self)
         await self.bus.request_name(self.NAME)
         logger.info(f"{self.NAME} D-Bus service running...")
-
-    async def _get_iface(self, service: str, path: str, interface: str):
-        introspection = await self.bus.introspect(service, path)
-        obj = self.bus.get_proxy_object(service, path, introspection)
-        return obj.get_interface(interface)
 
     async def _load_main_script(self):
         with NamedTemporaryFile(mode="w+", prefix="kwinctl-", suffix=".js") as f:
@@ -115,32 +110,26 @@ class KWinCtl(ServiceInterface):
 
     async def _cleanup_kglobalaccel(self):
         logger.info("calling cleanUp on org.kde.kglobalaccel /component/kwin")
-        comp = await self._get_iface("org.kde.kglobalaccel", "/component/kwin", "org.kde.kglobalaccel.Component")
-        res = await comp.call_clean_up()
-        if res:
+        if await self.bus.kgl_cleanup_kwin():
             logger.info("leftover KWin shortcuts cleaned up")
 
     async def _load_script_file(self, path: str):
-        msg = Message(
-            destination="org.kde.KWin",
-            path="/Scripting",
-            interface="org.kde.kwin.Scripting",
-            member="loadScript",
-            signature="ss",
-            body=[path, SCRIPT_UNIQUE_NAME],
-        )
-        script_id = (await self.bus.call(msg)).body[0]
-
+        script_id = (
+            await self.bus.send_msg(
+                destination="org.kde.KWin",
+                path="/Scripting",
+                interface="org.kde.kwin.Scripting",
+                member="loadScript",
+                signature="ss",
+                body=[path, SCRIPT_UNIQUE_NAME],
+            )
+        )[0]
         if script_id < 0:
             raise RuntimeError(f"KWin script {SCRIPT_UNIQUE_NAME!r} is already running")
 
         logger.debug(f"loaded script id: {script_id}")
 
-        return await self._get_iface(
-            "org.kde.KWin",
-            f"/Scripting/Script{script_id}",
-            "org.kde.kwin.Script",
-        )
+        return await self.bus.kwin_load_script(script_id)
 
     def _load_rules(self):
         if not RULES_PATH.exists():
@@ -168,16 +157,13 @@ class KWinCtl(ServiceInterface):
         self.rule_keys = {k: r[0] for k, r in rule_keys.items()}
 
     async def _remap_keys(self):
-        kglobalaccel = await self._get_iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
-        components = await kglobalaccel.call_all_components()
-        for c in components:
-            component = await self._get_iface("org.kde.kglobalaccel", c, "org.kde.kglobalaccel.Component")
+        async for name, component in self.bus.kgl_components():
             shortcuts = await component.call_all_shortcut_infos()
 
             with SHORTCUTS_LOG.open("a") as f:
                 print(
                     datetime.now().isoformat(timespec="milliseconds"),
-                    c,
+                    name,
                     json.dumps(shortcuts, indent=2),
                     file=f,
                 )
@@ -206,7 +192,7 @@ class KWinCtl(ServiceInterface):
                 f"rebinding {remap['action_name']!r} in {remap['component_name']!r}: {old_keys} -> {new_keys}"
                 f" (conflicts with {remap['conflicts']})"
             )
-            await kglobalaccel.call_set_foreign_shortcut_keys(
+            await self.bus.kgl_set_keys(
                 [
                     remap["component_id"],
                     remap["action_id"],
@@ -217,10 +203,9 @@ class KWinCtl(ServiceInterface):
             )
 
     async def _restore_remaps(self):
-        kglobalaccel = await self._get_iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
         for remap in self.remaps:
             logger.info(f"restoring {remap}")
-            await kglobalaccel.call_set_foreign_shortcut_keys(
+            await self.bus.kgl_set_keys(
                 [
                     remap["component_id"],
                     remap["action_id"],
@@ -269,6 +254,48 @@ class KWinCtl(ServiceInterface):
         finally:
             self._stop_event.set()
             logger.info("Shutdown complete.")
+
+
+class Bus(MessageBus):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._iface_cache = {}
+
+    async def kgl_components(self):
+        kgl = await self._get_iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
+        names = await kgl.call_all_components()
+        for name in names:
+            c = await self._get_iface("org.kde.kglobalaccel", name, "org.kde.kglobalaccel.Component")
+            yield name, c
+
+    async def kgl_set_keys(self, *args):
+        kgl = await self._get_iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
+        return await kgl.call_set_foreign_shortcut_keys(*args)
+
+    async def kgl_cleanup_kwin(self):
+        comp = await self._get_iface("org.kde.kglobalaccel", "/component/kwin", "org.kde.kglobalaccel.Component")
+        return await comp.call_clean_up()
+
+    async def kwin_load_script(self, script_id: int):
+        return await self._get_iface(
+            "org.kde.KWin",
+            f"/Scripting/Script{script_id}",
+            "org.kde.kwin.Script",
+        )
+
+    async def send_msg(self, **kwargs):
+        return (await self.call(Message(**kwargs))).body
+
+    async def _get_iface(self, service: str, path: str, interface: str):
+        if cached := self._iface_cache.get((service, path, interface)):
+            return cached
+
+        introspection = await self.introspect(service, path)
+        obj = self.get_proxy_object(service, path, introspection)
+        iface = obj.get_interface(interface)
+        self._iface_cache[(service, path, interface)] = iface
+
+        return iface
 
 
 if __name__ == "__main__":
