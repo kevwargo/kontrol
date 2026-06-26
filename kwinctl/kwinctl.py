@@ -192,8 +192,8 @@ class KWinCtl(ServiceInterface):
             old_keys = [QKeySequence(k).toString() for k in remap["keys"]]
             new_keys = [QKeySequence(k).toString() for k in remap["new_keys"]]
             logger.info(
-                f"rebinding {remap['action_name']!r} in {remap['component_name']!r}: {old_keys} -> {new_keys}"
-                f" (conflicts with {remap['conflicts']})"
+                f"rebinding {remap['action_name']!r} in {remap['component_name']!r}: "
+                f"{old_keys} -> {new_keys} (conflicts with {remap['conflicts']})"
             )
             await kglobalaccel.call_set_foreign_shortcut_keys(
                 [
