@@ -26,21 +26,38 @@ function triggerRule({ id, key, candidates, command, auto }) {
   } else if (command) {
     if (auto) {
       log(`not found, executing ${command}`);
-      callDBus(DBUS_NAME, "/", DBUS_NAME, "Execute", command);
+      selfDBus("RunShellCommand", command);
     } else {
-      log(`not found, querying ${command}`);
-      callDBus("org.kde.krunner", "/App", "org.kde.krunner.App", "display");
-      callDBus(
-        "org.kde.krunner",
-        "/App",
-        "org.kde.krunner.App",
-        "query",
-        command,
-      );
+      log(`not found, prompting ${command}`);
+      krunnerPrompt(command);
     }
   } else {
     log("not found, ignoring");
   }
+}
+
+function triggerCommand({ id, key, shell, cmd, prompt }) {
+  print(`kwinctl cmd ${id} triggered by ${key}`);
+
+  if (shell) {
+    print(`running shell ${shell}`);
+    selfDBus("RunShellCommand", shell);
+  } else if (cmd) {
+    print(`running raw ${cmd}`);
+    selfDBus("RunCommand", cmd);
+  } else if (prompt) {
+    print(`showing prompt ${prompt}`);
+    krunnerPrompt(prompt);
+  }
+}
+
+function selfDBus(method, ...args) {
+  callDBus(DBUS_NAME, "/", DBUS_NAME, method, ...args);
+}
+
+function krunnerPrompt(cmd) {
+  callDBus("org.kde.krunner", "/App", "org.kde.krunner.App", "display");
+  callDBus("org.kde.krunner", "/App", "org.kde.krunner.App", "query", cmd);
 }
 
 function matchRule(rule, window) {
@@ -52,7 +69,7 @@ function matchRule(rule, window) {
   if (rule.cls && rule.cls !== window.resourceClass) return false;
   if (rule.caption && rule.caption !== window.caption) return false;
 
-  print(`kwinctl matcher: ${wfmt(window)} matched by ${rule}`);
+  print(`kwinctl matcher: ${wfmt(window)} matched by ${JSON.stringify(rule)}`);
 
   return true;
 }
@@ -92,12 +109,19 @@ const wfmt = (w) => `${w.resourceName}(${w.caption})${w.internalId}`;
 const wsfmt = (ws) => `[${(ws ?? []).map(wfmt).join("; ")}]`;
 
 RULES.forEach((r) => {
-  print(`kwinctl: binding ${r.key} to ${JSON.stringify(r)}`);
+  print(`kwinctl: binding ${r.key} to rule ${JSON.stringify(r)}`);
   registerShortcut(
     `kwinctl_rule_${r.id}`,
     `KWinCTL: Focus ${r.id}`,
     r.key,
     () => triggerRule(r),
+  );
+});
+
+COMMANDS.forEach((c) => {
+  print(`kwinctl: binding ${c.key} to command ${JSON.stringify(c)}`);
+  registerShortcut(`kwinctl_cmd_${c.id}`, `KWinCTL: Run ${c.id}`, c.key, () =>
+    triggerCommand(c),
   );
 });
 

@@ -73,9 +73,21 @@ class KWinCtl(ServiceInterface):
         self._shutting_down = False
 
     @method()
-    def Execute(self, cmd: "s"):  # noqa:F821
+    def RunShellCommand(self, cmd: "s"):  # noqa:F821
         p = Popen(cmd, shell=True, start_new_session=True)
-        self.env.log.info(f"Started command [{p.pid}]{cmd!r}")
+        self.env.log.info(f"Started shell command [{p.pid}]({cmd})")
+
+    @method()
+    def RunCommand(self, varargs: "av"):  # noqa:F821
+        cmd = []
+        for idx, arg in enumerate(varargs):
+            if not (arg.signature == "s" and isinstance(arg.value, str)):
+                raise ValueError(f"Invalid arg {idx}: val={arg.value!r} sig={arg.signature}")
+
+            cmd.append(arg.value)
+
+        p = Popen(cmd, start_new_session=True)
+        self.env.log.info(f"Started command [{p.pid}]({cmd})")
 
     async def run(self):
         self._register_signals()
@@ -300,7 +312,7 @@ class Bus(MessageBus):
 
 
 class HotkeysConfig:
-    COMMAND_KEYS = {"shell", "cmd", "dbus"}
+    COMMAND_KEYS = {"shell", "cmd", "prompt"}
 
     def __init__(self, env: Environment):
         self.env = env

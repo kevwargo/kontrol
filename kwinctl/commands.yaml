@@ -5,11 +5,20 @@
 #   # exactly one of the following can be specified
 #   shell: string
 #   cmd: string[]
-#   dbus:
-#     string[] # busctl syntax
-#     # or explicit
-#     service: string
-#     path: string
-#     interface: string
-#     method: string
-#     args: any[]?
+#   prompt: string
+
+bt-on:
+  key: Meta+Shift+B
+  shell: rfkill unblock bluetooth
+bt-off:
+  key: Meta+Alt+B
+  shell: rfkill block bluetooth
+kscreen-toggle-laptop:
+  key: Meta+Alt+X
+  shell: kscreen-toggle-laptop
+mocp-g:
+  key: Meta+Q
+  shell: mocp -G
+open-foot:
+  key: Meta+Shift+T
+  shell: foot -w 1200x800
