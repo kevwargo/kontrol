@@ -1,7 +1,8 @@
 /*
-  injected from python:
-  RULES: Rule[];
+  injected above from python:
   DBUS_NAME: string;
+  RULES: Rule[];
+  COMMANDS: Command[];
 */
 
 const rulesByWindowId = {};
@@ -43,6 +44,11 @@ function triggerRule({ id, key, candidates, command, auto }) {
 }
 
 function matchRule(rule, window) {
+  if (!rule.cls && !rule.caption) {
+    print(`kwinctl matcher: ignoring rule with empty matching props: ${rule}`);
+    return false;
+  }
+
   if (rule.cls && rule.cls !== window.resourceClass) return false;
   if (rule.caption && rule.caption !== window.caption) return false;
 
@@ -87,8 +93,11 @@ const wsfmt = (ws) => `[${(ws ?? []).map(wfmt).join("; ")}]`;
 
 RULES.forEach((r) => {
   print(`kwinctl: binding ${r.key} to ${JSON.stringify(r)}`);
-  registerShortcut(`kwinctl_${r.id}`, `Focus ${r.id} (KWinCTL)`, r.key, () =>
-    triggerRule(r),
+  registerShortcut(
+    `kwinctl_rule_${r.id}`,
+    `KWinCTL: Focus ${r.id}`,
+    r.key,
+    () => triggerRule(r),
   );
 });
 

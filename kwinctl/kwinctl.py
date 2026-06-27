@@ -7,7 +7,6 @@ import os
 import signal
 import sys
 from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
 from subprocess import Popen
 from tempfile import NamedTemporaryFile
@@ -18,43 +17,67 @@ from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method
 from PyQt6.QtGui import QKeySequence
 
-SCRIPT_PATH = Path("/usr/share/kwinctl/script.js")
-DEFAULT_RULES_PATH = Path("/usr/share/kwinctl/rules.yaml")
-RULES_PATH = Path("~/.local/share/kwinctl/rules.yaml").expanduser()
 SCRIPT_UNIQUE_NAME = "kwinctl"
 
-logfmt = "[%(levelname)s] %(message)s"
 
-if sys.stdin.isatty() and sys.stdout.isatty() and sys.stderr.isatty():
-    logfmt = "[%(levelname)s] %(asctime)s %(message)s"
-    SCRIPT_PATH = Path(__file__).parent / "kwinctl.js"
+class Environment:
+    USER_DIR = Path("~/.local/share/kwinctl").expanduser()
+    GLOBAL_DIR = Path("/usr/share/kwinctl")
 
-logging.basicConfig(level=logging.DEBUG, format=logfmt)
-logger = logging.getLogger("kwinctl")
+    def __init__(self):
+        self.interactive = all(f.isatty() for f in (sys.stdin, sys.stdout, sys.stderr))
 
-SHORTCUTS_LOG = Path("~/.local/share/kwinctl/shortcuts.log").expanduser()
+        logfmt = (
+            "[%(levelname)s] %(asctime)s %(message)s"
+            if self.interactive
+            else "[%(levelname)s] %(message)s"
+        )
+
+        handler = logging.StreamHandler()
+        handler.setLevel(logging.DEBUG)
+        handler.setFormatter(logging.Formatter(logfmt))
+        self.log = logging.getLogger("kwinctl")
+        self.log.setLevel(logging.DEBUG)
+        self.log.addHandler(handler)
+
+    def read_cfg_file(self, base_name: str, only_global=False) -> str | None:
+        try:
+            if self.interactive:
+                return (Path(__file__).parent / base_name).read_text()
+
+            global_path = self.GLOBAL_DIR / base_name
+            if only_global:
+                return global_path.read_text()
+
+            if not (user_path := self.USER_DIR / base_name).exists():
+                self.log.info(f"Initializing {user_path} from default {global_path}...")
+                user_path.parent.mkdir(parents=True, exist_ok=True)
+                user_path.write_bytes(global_path.read_bytes())
+
+            return user_path.read_text()
+        except FileNotFoundError:
+            return None
 
 
 class KWinCtl(ServiceInterface):
     NAME = "org.kevwargo.kwinctl"
 
-    def __init__(self):
+    def __init__(self, env: Environment):
         super().__init__(self.NAME)
+        self.env = env
         self.bus: Bus | None = None
         self.main_script = None
-        self.rules = None
-        self.rule_keys = None
         self.remaps = []
+        self.hotkeys = HotkeysConfig(env)
         self._stop_event = asyncio.Event()
         self._shutting_down = False
 
     @method()
-    def Execute(self, value: "s"):  # noqa:F821
-        p = Popen(value, shell=True, start_new_session=True)
-        logger.info(f"Started command [{p.pid}]{value!r}")
+    def Execute(self, cmd: "s"):  # noqa:F821
+        p = Popen(cmd, shell=True, start_new_session=True)
+        self.env.log.info(f"Started command [{p.pid}]{cmd!r}")
 
     async def run(self):
-        self._load_rules()
         self._register_signals()
 
         try:
@@ -62,10 +85,10 @@ class KWinCtl(ServiceInterface):
             await self._remap_keys()
             await self._load_main_script()
 
-            logger.debug("Service is running. Press Ctrl+C to exit.")
+            self.env.log.debug("Service is running. Press Ctrl+C to exit.")
             await self._stop_event.wait()
 
-            logger.debug("Run loop exiting...")
+            self.env.log.debug("Run loop exiting...")
         finally:
             await self._shutdown()
 
@@ -82,26 +105,31 @@ class KWinCtl(ServiceInterface):
             try:
                 pid, status = os.waitpid(-1, os.WNOHANG)
             except ChildProcessError as e:
-                logger.info(f"reaped last child: {e}")
+                self.env.log.info(f"reaped last child: {e}")
                 break
 
-            logger.info(f"reaped [{pid}]({status})")
+            self.env.log.info(f"reaped {pid}, status: {status}")
 
             if pid == 0:
-                logger.info("reaped last child")
+                self.env.log.info("reaped last child")
                 break
 
     async def _register_dbus_service(self):
         self.bus = await Bus(bus_type=BusType.SESSION).connect()
         self.bus.export("/", self)
         await self.bus.request_name(self.NAME)
-        logger.info(f"{self.NAME} D-Bus service running...")
+        self.env.log.info(f"{self.NAME} D-Bus service running...")
 
     async def _load_main_script(self):
         with NamedTemporaryFile(mode="w+", prefix="kwinctl-", suffix=".js") as f:
-            print(f"const DBUS_NAME = {self.NAME!r};", file=f)
-            print(f"const RULES = {json.dumps(self.rules)};", file=f)
-            f.write(SCRIPT_PATH.read_text())
+            for name, value in {
+                "DBUS_NAME": self.NAME,
+                "RULES": self.hotkeys.rules,
+                "COMMANDS": self.hotkeys.commands,
+            }.items():
+                print(f"const {name} = {json.dumps(value)};", file=f)
+
+            f.write(self.env.read_cfg_file("kwinctl.js", True))
             f.flush()
 
             await self._cleanup_kglobalaccel()
@@ -109,9 +137,9 @@ class KWinCtl(ServiceInterface):
             await self.main_script.call_run()
 
     async def _cleanup_kglobalaccel(self):
-        logger.info("calling cleanUp on org.kde.kglobalaccel /component/kwin")
+        self.env.log.info("calling cleanUp on org.kde.kglobalaccel /component/kwin")
         if await self.bus.kgl_cleanup_kwin():
-            logger.info("leftover KWin shortcuts cleaned up")
+            self.env.log.info("leftover KWin shortcuts cleaned up")
 
     async def _load_script_file(self, path: str):
         script_id = (
@@ -127,50 +155,17 @@ class KWinCtl(ServiceInterface):
         if script_id < 0:
             raise RuntimeError(f"KWin script {SCRIPT_UNIQUE_NAME!r} is already running")
 
-        logger.debug(f"loaded script id: {script_id}")
+        self.env.log.debug(f"loaded script id: {script_id}")
 
         return await self.bus.kwin_load_script(script_id)
-
-    def _load_rules(self):
-        if not RULES_PATH.exists():
-            logger.info(f"{RULES_PATH} doesn't exit, copying default {DEFAULT_RULES_PATH}")
-            RULES_PATH.parent.mkdir(parents=True, exist_ok=True)
-            RULES_PATH.write_text(DEFAULT_RULES_PATH.read_text())
-
-        self.rules = [r | {"id": k} for k, r in yaml.safe_load(RULES_PATH.read_text()).items()]
-
-        rule_keys = defaultdict(list)
-        for r in self.rules:
-            qk = QKeySequence(r["key"])
-            if not qk.toString():
-                raise ValueError(f"{r['key']!r} is not a valid Qt key")
-
-            rule_keys[qk[0].toCombined()].append(r)
-
-        if errors := [
-            f"Key {k} is used for multiple rules:\n{yaml.safe_dump(rules)}"
-            for k, rules in rule_keys.items()
-            if len(rules) > 1
-        ]:
-            raise ValueError("\n".join(errors))
-
-        self.rule_keys = {k: r[0] for k, r in rule_keys.items()}
 
     async def _remap_keys(self):
         async for name, component in self.bus.kgl_components():
             shortcuts = await component.call_all_shortcut_infos()
 
-            with SHORTCUTS_LOG.open("a") as f:
-                print(
-                    datetime.now().isoformat(timespec="milliseconds"),
-                    name,
-                    json.dumps(shortcuts, indent=2),
-                    file=f,
-                )
-
             for s in shortcuts:
                 keys = s[6]
-                if all(k not in self.rule_keys for k in keys):
+                if all(k not in self.hotkeys.bindings for k in keys):
                     continue
 
                 self.remaps.append(
@@ -179,18 +174,20 @@ class KWinCtl(ServiceInterface):
                         "action_name": s[1],
                         "component_id": s[2],
                         "component_name": s[3],
-                        "keys": keys,
-                        "new_keys": [k for k in keys if k not in self.rule_keys],
-                        "conflicts": [self.rule_keys[k] for k in keys if k in self.rule_keys],
+                        "preserved_keys": keys,
+                        "temp_new_keys": [k for k in keys if k not in self.hotkeys.bindings],
+                        "conflicts": [
+                            self.hotkeys.bindings[k] for k in keys if k in self.hotkeys.bindings
+                        ],
                     }
                 )
 
         for remap in self.remaps:
-            old_keys = [QKeySequence(k).toString() for k in remap["keys"]]
-            new_keys = [QKeySequence(k).toString() for k in remap["new_keys"]]
-            logger.info(
+            preserved_keys = [QKeySequence(k).toString() for k in remap["preserved_keys"]]
+            temp_new_keys = [QKeySequence(k).toString() for k in remap["temp_new_keys"]]
+            self.env.log.info(
                 f"rebinding {remap['action_name']!r} in {remap['component_name']!r}: "
-                f"{old_keys} -> {new_keys} (conflicts with {remap['conflicts']})"
+                f"{preserved_keys} -> {temp_new_keys} (conflicts with {remap['conflicts']})"
             )
             await self.bus.kgl_set_keys(
                 [
@@ -199,12 +196,12 @@ class KWinCtl(ServiceInterface):
                     remap["component_name"],
                     remap["action_name"],
                 ],
-                [[[k, 0, 0, 0]] for k in remap["new_keys"]],
+                [[[k, 0, 0, 0]] for k in remap["temp_new_keys"]],
             )
 
     async def _restore_remaps(self):
         for remap in self.remaps:
-            logger.info(f"restoring {remap}")
+            self.env.log.info(f"restoring {remap}")
             await self.bus.kgl_set_keys(
                 [
                     remap["component_id"],
@@ -212,7 +209,7 @@ class KWinCtl(ServiceInterface):
                     remap["component_name"],
                     remap["action_name"],
                 ],
-                [[[k, 0, 0, 0]] for k in remap["keys"]],
+                [[[k, 0, 0, 0]] for k in remap["preserved_keys"]],
             )
 
     async def _shutdown(self, sig=None):
@@ -220,40 +217,40 @@ class KWinCtl(ServiceInterface):
             return
         self._shutting_down = True
 
-        logger.info(f"Shutdown initiated (signal={sig})")
+        self.env.log.info(f"Shutdown initiated (signal={sig})")
 
         try:
             if self.main_script is not None:
                 try:
-                    logger.info("Stopping KWin script...")
+                    self.env.log.info("Stopping KWin script...")
                     await self.main_script.call_stop()
                 except Exception as e:
-                    logger.error(f"Error stopping script: {e}")
+                    self.env.log.error(f"Error stopping script: {e}")
             if self.bus is not None:
                 try:
                     await self._cleanup_kglobalaccel()
                 except Exception as e:
-                    logger.error(f"Error cleaning up kglobalaccel: {e}")
+                    self.env.log.error(f"Error cleaning up kglobalaccel: {e}")
 
                 try:
                     await self._restore_remaps()
                 except Exception as e:
-                    logger.error(f"Restoring remapped keys: {e}")
+                    self.env.log.error(f"Restoring remapped keys: {e}")
 
                 try:
-                    logger.info("Releasing D-Bus name...")
+                    self.env.log.info("Releasing D-Bus name...")
                     await self.bus.release_name(self.NAME)
                 except Exception as e:
-                    logger.error(f"Error releasing name: {e}")
+                    self.env.log.error(f"Error releasing name: {e}")
 
                 try:
-                    logger.info("Disconnecting from D-Bus...")
+                    self.env.log.info("Disconnecting from D-Bus...")
                     self.bus.disconnect()
                 except Exception as e:
-                    logger.error(f"Error disconnecting bus: {e}")
+                    self.env.log.error(f"Error disconnecting bus: {e}")
         finally:
             self._stop_event.set()
-            logger.info("Shutdown complete.")
+            self.env.log.info("Shutdown complete.")
 
 
 class Bus(MessageBus):
@@ -302,8 +299,63 @@ class Bus(MessageBus):
         return iface
 
 
+class HotkeysConfig:
+    COMMAND_KEYS = {"shell", "cmd", "dbus"}
+
+    def __init__(self, env: Environment):
+        self.env = env
+
+        self._load_rules()
+        self._load_commands()
+
+        bindings = defaultdict(list)
+        for item in [{"type": "rule"} | r for r in self.rules] + [
+            {"type": "command"} | c for c in self.commands
+        ]:
+            qk = QKeySequence(k := item["key"])
+            if not qk.toString():
+                raise ValueError(f"{k!r} is not a valid Qt key in {item}")
+
+            bindings[qk[0].toCombined()].append(item)
+
+        if errors := [
+            f"Key {k} is used multiple times:\n{yaml.safe_dump(items)}"
+            for k, items in bindings.items()
+            if len(items) > 1
+        ]:
+            raise ValueError("\n".join(errors))
+
+        self.bindings = {k: i[0] for k, i in bindings.items()}
+
+    def _load_rules(self):
+        self.rules = [
+            {"id": k} | r
+            for k, r in (yaml.safe_load(self.env.read_cfg_file("rules.yaml")) or {}).items()
+        ]
+        for rule in self.rules:
+            if not (rule.get("cls") or rule.get("caption")):
+                raise ValueError(f"Rule matches nothing: {rule}")
+            if not rule.get("key"):
+                raise ValueError(f"Rule does not have a key: {rule}")
+
+    def _load_commands(self):
+        self.commands = [
+            {"id": k} | c
+            for k, c in (yaml.safe_load(self.env.read_cfg_file("commands.yaml")) or {}).items()
+        ]
+        for cmd in self.commands:
+            if not cmd.get("key"):
+                raise ValueError(f"Command {cmd} does not have a key")
+
+            if len(self.COMMAND_KEYS.intersection(cmd)) != 1:
+                raise ValueError(
+                    f"Command must have exactly one of {self.COMMAND_KEYS}, but has {cmd}"
+                )
+
+
 if __name__ == "__main__":
+    env = Environment()
     try:
-        asyncio.run(KWinCtl().run())
+        asyncio.run(KWinCtl(env).run())
     except KeyboardInterrupt:
-        logger.error("Forced exit")
+        env.log.error("Forced exit")

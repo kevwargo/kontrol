@@ -1,0 +1,15 @@
+# Example
+#
+# <command-id>:
+#   key: string
+#   # exactly one of the following can be specified
+#   shell: string
+#   cmd: string[]
+#   dbus:
+#     string[] # busctl syntax
+#     # or explicit
+#     service: string
+#     path: string
+#     interface: string
+#     method: string
+#     args: any[]?
