@@ -1,0 +1,23 @@
+name: Build pacman
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-pacman:
+    runs-on: ubuntu-latest
+
+    container:
+      image: archlinux:latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Prepare build env
+      run: |
+        pacman -Syu --noconfirm --needed base-devel git
+        useradd -m builder
+        chown -R builder:builder "$GITHUB_WORKSPACE"
+    - name: Build
+      run: runuser -u builder -- make build-pacman
+    - name: Show results
+      run: pwd && find -name .git -prune -o -print
