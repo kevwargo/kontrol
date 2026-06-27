@@ -1,8 +1,14 @@
 .PHONY: build-pacman install-pacman install
 
+MAKEPKG_BUILD_FLAGS := --force
+
+ifeq ($(GITHUB_ACTIONS),true)
+MAKEPKG_BUILD_FLAGS += --nodeps
+endif
+
 build-pacman:
 	tar -caf pacman/kontrol_src.tar.zst --exclude-vcs --exclude-vcs-ignores --exclude pacman .
-	makepkg --dir pacman --force
+	makepkg --dir pacman $(MAKEPKG_BUILD_FLAGS)
 
 install-pacman:
 	makepkg --dir pacman --install --noconfirm

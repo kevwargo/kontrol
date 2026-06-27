@@ -14,10 +14,10 @@ jobs:
     - uses: actions/checkout@v4
     - name: Prepare build env
       run: |
-        pacman -Syu --noconfirm --needed base-devel git
+        pacman -Sy --noconfirm make fakeroot debugedit
         useradd -m builder
         chown -R builder:builder "$GITHUB_WORKSPACE"
     - name: Build
       run: runuser -u builder -- make build-pacman
     - name: Show results
-      run: pwd && find -name .git -prune -o -print
+      run: find $PWD -name .git -prune -o -print
