@@ -6,9 +6,12 @@ import logging
 import os
 import signal
 import sys
+from argparse import ArgumentParser
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from subprocess import Popen
+from subprocess import run as run_cmd
 from tempfile import NamedTemporaryFile
 
 import yaml
@@ -40,7 +43,7 @@ class Environment:
         self.log.setLevel(logging.DEBUG)
         self.log.addHandler(handler)
 
-    def read_cfg_file(self, base_name: str, only_global=False) -> str | None:
+    def read_cfg_file(self, base_name: str, only_global=False) -> str:
         try:
             if self.interactive:
                 return (Path(__file__).parent / base_name).read_text()
@@ -56,19 +59,19 @@ class Environment:
 
             return user_path.read_text()
         except FileNotFoundError:
-            return None
+            return ""
 
 
 class KWinCtl(ServiceInterface):
     NAME = "org.kevwargo.kwinctl"
 
-    def __init__(self, env: Environment):
+    def __init__(self):
         super().__init__(self.NAME)
-        self.env = env
+        self.env = Environment()
         self.bus: Bus | None = None
         self.main_script = None
-        self.remaps = []
-        self.hotkeys = HotkeysConfig(env)
+        self.remaps: dict[tuple, ShortcutInfo] = {}
+        self.hotkeys = HotkeysConfig(self.env)
         self._stop_event = asyncio.Event()
         self._shutting_down = False
 
@@ -113,18 +116,18 @@ class KWinCtl(ServiceInterface):
         loop.add_signal_handler(signal.SIGCHLD, self._reap_children)
 
     def _reap_children(self, s=None):
+        reaped = []
+
         while True:
             try:
                 pid, status = os.waitpid(-1, os.WNOHANG)
-            except ChildProcessError as e:
-                self.env.log.info(f"reaped last child: {e}")
+            except ChildProcessError:
                 break
-
-            self.env.log.info(f"reaped {pid}, status: {status}")
-
             if pid == 0:
-                self.env.log.info("reaped last child")
                 break
+            reaped.append(f"{pid}(status: {status})")
+
+        self.env.log.info(f"reaped {'; '.join(reaped)}")
 
     async def _register_dbus_service(self):
         self.bus = await Bus(bus_type=BusType.SESSION).connect()
@@ -139,7 +142,7 @@ class KWinCtl(ServiceInterface):
                 "RULES": self.hotkeys.rules,
                 "COMMANDS": self.hotkeys.commands,
             }.items():
-                print(f"const {name} = {json.dumps(value)};", file=f)
+                print(f"const {name} = {json.dumps(value, default=json_default)};", file=f)
 
             f.write(self.env.read_cfg_file("kwinctl.js", True))
             f.flush()
@@ -172,56 +175,28 @@ class KWinCtl(ServiceInterface):
         return await self.bus.kwin_load_script(script_id)
 
     async def _remap_keys(self):
-        async for name, component in self.bus.kgl_components():
-            shortcuts = await component.call_all_shortcut_infos()
+        for s in await self.bus.kgl_all_shortcuts():
+            keys = set(s.active_keys)
 
-            for s in shortcuts:
-                keys = s[6]
-                if all(k not in self.hotkeys.bindings for k in keys):
-                    continue
+            override = self.hotkeys.overrides.get((s.component_id, s.action_id))
+            if override:
+                keys = set(override["keys"])
+                self.env.log.info(f"Found override for {s}: {keys}")
+            else:
+                keys.difference_update(self.hotkeys.bindings)
 
-                self.remaps.append(
-                    {
-                        "action_id": s[0],
-                        "action_name": s[1],
-                        "component_id": s[2],
-                        "component_name": s[3],
-                        "preserved_keys": keys,
-                        "temp_new_keys": [k for k in keys if k not in self.hotkeys.bindings],
-                        "conflicts": [
-                            self.hotkeys.bindings[k] for k in keys if k in self.hotkeys.bindings
-                        ],
-                    }
-                )
+            if set(s.active_keys) != keys:
+                self.remaps[tuple(keys)] = s
 
-        for remap in self.remaps:
-            preserved_keys = [QKeySequence(k).toString() for k in remap["preserved_keys"]]
-            temp_new_keys = [QKeySequence(k).toString() for k in remap["temp_new_keys"]]
-            self.env.log.info(
-                f"rebinding {remap['action_name']!r} in {remap['component_name']!r}: "
-                f"{preserved_keys} -> {temp_new_keys} (conflicts with {remap['conflicts']})"
-            )
-            await self.bus.kgl_set_keys(
-                [
-                    remap["component_id"],
-                    remap["action_id"],
-                    remap["component_name"],
-                    remap["action_name"],
-                ],
-                [[[k, 0, 0, 0]] for k in remap["temp_new_keys"]],
-            )
+        for new_keys, remap in self.remaps.items():
+            self.env.log.info(f"Remapping {remap} to {new_keys}")
+            await self.bus.kgl_set_keys(remap.to_dbus(), [[k.to_dbus()] for k in new_keys])
 
     async def _restore_remaps(self):
-        for remap in self.remaps:
-            self.env.log.info(f"restoring {remap}")
+        for remap in self.remaps.values():
+            self.env.log.info(f"Restoring {remap}")
             await self.bus.kgl_set_keys(
-                [
-                    remap["component_id"],
-                    remap["action_id"],
-                    remap["component_name"],
-                    remap["action_name"],
-                ],
-                [[[k, 0, 0, 0]] for k in remap["preserved_keys"]],
+                remap.to_dbus(), [[k.to_dbus()] for k in remap.active_keys]
             )
 
     async def _shutdown(self, sig=None):
@@ -265,22 +240,66 @@ class KWinCtl(ServiceInterface):
             self.env.log.info("Shutdown complete.")
 
 
+@dataclass
+class ShortcutInfo:
+    action_id: str
+    action_name: str
+    component_id: str
+    component_name: str
+    context_id: str
+    context_name: str
+    active_keys: list[KeySequence]
+    default_keys: list[KeySequence]
+
+    @classmethod
+    def from_list(cls, fields: list[str]):
+        return cls(
+            action_id=fields[0],
+            action_name=fields[1],
+            component_id=fields[2],
+            component_name=fields[3],
+            context_id=fields[4],
+            context_name=fields[5],
+            active_keys=[KeySequence(k) for k in fields[6] if k],
+            default_keys=[KeySequence(k) for k in fields[7] if k],
+        )
+
+    def __str__(self):
+        return (
+            f"{self.component_id}({self.component_name}):{self.action_id}({self.action_name}):"
+            f" {self.active_keys}"
+        )
+
+    def __repr__(self):
+        return repr(str(self))
+
+    def to_dbus(self) -> list[str]:
+        return [self.component_id, self.action_id, self.component_name, self.action_name]
+
+
 class Bus(MessageBus):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._iface_cache = {}
 
-    async def kgl_components(self):
-        kgl = await self._get_iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
+    async def kgl_all_shortcuts(self) -> list[ShortcutInfo]:
+        all_shortcuts = []
+        kgl = await self._get_iface(
+            "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel"
+        )
         names = await kgl.call_all_components()
         for name in names:
             c = await self._get_iface(
                 "org.kde.kglobalaccel", name, "org.kde.kglobalaccel.Component"
             )
-            yield name, c
+            all_shortcuts.extend(map(ShortcutInfo.from_list, await c.call_all_shortcut_infos()))
+
+        return all_shortcuts
 
     async def kgl_set_keys(self, *args):
-        kgl = await self._get_iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
+        kgl = await self._get_iface(
+            "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel"
+        )
         return await kgl.call_set_foreign_shortcut_keys(*args)
 
     async def kgl_cleanup_kwin(self):
@@ -316,28 +335,20 @@ class HotkeysConfig:
 
     def __init__(self, env: Environment):
         self.env = env
+        self.bindings: dict[KeySequence, dict] = defaultdict(list)
 
         self._load_rules()
         self._load_commands()
-
-        bindings = defaultdict(list)
-        for item in [{"type": "rule"} | r for r in self.rules] + [
-            {"type": "command"} | c for c in self.commands
-        ]:
-            qk = QKeySequence(k := item["key"])
-            if not qk.toString():
-                raise ValueError(f"{k!r} is not a valid Qt key in {item}")
-
-            bindings[qk[0].toCombined()].append(item)
+        self._load_overrides()
 
         if errors := [
-            f"Key {k} is used multiple times:\n{yaml.safe_dump(items)}"
-            for k, items in bindings.items()
+            f"Key {k} is used multiple times: " + json.dumps(items, indent=2, default=json_default)
+            for k, items in self.bindings.items()
             if len(items) > 1
         ]:
             raise ValueError("\n".join(errors))
 
-        self.bindings = {k: i[0] for k, i in bindings.items()}
+        self.bindings = {k: i[0] for k, i in self.bindings.items()}
 
     def _load_rules(self):
         self.rules = [
@@ -345,10 +356,10 @@ class HotkeysConfig:
             for k, r in (yaml.safe_load(self.env.read_cfg_file("rules.yaml")) or {}).items()
         ]
         for rule in self.rules:
+            rule["key"] = validate_key(rule.get("key"), f"Rule {rule}")
             if not (rule.get("cls") or rule.get("caption")):
                 raise ValueError(f"Rule matches nothing: {rule}")
-            if not rule.get("key"):
-                raise ValueError(f"Rule does not have a key: {rule}")
+            self.bindings[rule["key"]].append({"type": "rule"} | rule)
 
     def _load_commands(self):
         self.commands = [
@@ -356,18 +367,117 @@ class HotkeysConfig:
             for k, c in (yaml.safe_load(self.env.read_cfg_file("commands.yaml")) or {}).items()
         ]
         for cmd in self.commands:
-            if not cmd.get("key"):
-                raise ValueError(f"Command {cmd} does not have a key")
-
+            cmd["key"] = validate_key(cmd.get("key"), f"Command {cmd}")
             if len(self.COMMAND_KEYS.intersection(cmd)) != 1:
                 raise ValueError(
                     f"Command must have exactly one of {self.COMMAND_KEYS}, but has {cmd}"
                 )
+            self.bindings[cmd["key"]].append({"type": "command"} | cmd)
+
+    def _load_overrides(self):
+        self.overrides: dict[tuple[str, str], dict] = {}
+
+        overrides = yaml.safe_load(self.env.read_cfg_file("overrides.yaml")) or {}
+
+        for comp_id, component in overrides.items():
+            for act_id, action in component["actions"].items():
+                override = {"component_id": comp_id, "action_id": act_id} | action
+                action["keys"] = [
+                    validate_key(k, f"Override {override}") for k in action.get("keys", [])
+                ]
+
+                self.overrides[(comp_id, act_id)] = action
+                for k in action["keys"]:
+                    self.bindings[k].append({"type": "override"} | override)
+
+
+class KeySequence(QKeySequence):
+    def __init__(self, raw):
+        super().__init__(raw)
+        if not self.toString():
+            raise ValueError(f"Invalid key {raw!r}")
+
+    def __str__(self):
+        return self.toString()
+
+    def __repr__(self):
+        return repr(self.toString())
+
+    def to_dbus(self) -> list[int]:
+        numeric = [k.toCombined() for k in self]
+        if (rem := 4 - len(numeric)) > 0:
+            numeric.extend([0] * rem)
+        return numeric
+
+
+def validate_key(raw: str | None, err_msg: str) -> KeySequence:
+    if not raw:
+        raise ValueError(f"{err_msg}: Key not defined")
+    if not (qk := KeySequence(raw)).toString():
+        raise ValueError(f"{err_msg}: Key {raw!r} is invalid")
+
+    return qk
+
+
+def json_default(x) -> str:
+    return x.toString() if isinstance(x, KeySequence) else str(x)
+
+
+async def list_all_shortcuts(bus: Bus):
+    all_shortcuts = {}
+    for s in await bus.kgl_all_shortcuts():
+        if s.action_id.startswith("kwinctl_"):
+            continue
+
+        if s.component_id not in all_shortcuts:
+            all_shortcuts[s.component_id] = {"name": s.component_name, "actions": {}}
+
+        all_shortcuts[s.component_id]["actions"][s.action_id] = {
+            "name": s.action_name,
+            "keys": s.active_keys,
+            "default_keys": s.default_keys,
+        }
+
+    return all_shortcuts
+
+
+async def record_overrides(args):
+    bus = await Bus(bus_type=BusType.SESSION).connect()
+
+    orig = await list_all_shortcuts(bus)
+    run_cmd(["systemsettings", "kcm_keys"], check=True)
+    new = await list_all_shortcuts(bus)
+
+    modified = {}
+
+    for c_id, component in new.items():
+        if c_id in orig:
+            for a_id, action in component["actions"].items():
+                if orig[c_id]["actions"][a_id]["keys"] != action["keys"]:
+                    if c_id not in modified:
+                        modified[c_id] = {"name": component["name"], "actions": {}}
+                    modified[c_id]["actions"][a_id] = action
+        else:
+            modified[c_id] = component
+
+    for name, data in {
+        "orig": orig,
+        "new": new,
+        "modified": modified,
+    }.items():
+        Path(f"overrides-{name}.yaml").write_text(yaml.safe_dump(data, sort_keys=False))
+
+
+async def main():
+    parser = ArgumentParser()
+    parser.add_argument("-O", "--record-overrides", action="store_true")
+    args = parser.parse_args()
+
+    if args.record_overrides:
+        await record_overrides(args)
+    else:
+        await KWinCtl().run()
 
 
 if __name__ == "__main__":
-    env = Environment()
-    try:
-        asyncio.run(KWinCtl(env).run())
-    except KeyboardInterrupt:
-        env.log.error("Forced exit")
+    asyncio.run(main())
