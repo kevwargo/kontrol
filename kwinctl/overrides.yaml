@@ -80,3 +80,9 @@ org.kde.spectacle.desktop:
     name: Launch without taking a screenshot
     keys:
     - Meta+Shift+S
+mediacontrol:
+  playpausemedia:
+    name: Play/Pause media playback
+    keys:
+    - Meta+>
+    - Media Play
