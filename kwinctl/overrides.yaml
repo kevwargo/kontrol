@@ -3,10 +3,17 @@ kmix:
     name: Decrease Volume
     keys:
     - Meta+F2
+    - Volume Down
   increase_volume:
     name: Increase Volume
     keys:
     - Meta+F3
+    - Volume Up
+  mute:
+    name: Mute
+    keys:
+    - Meta+F1
+    - Volume Mute
 kwin:
   Window Above Other Windows:
     name: Keep Window Above Others
@@ -42,3 +49,34 @@ plasmashell:
     name: Show Clipboard Items at Mouse Position
     keys:
     - Meta+Shift+K
+ksmserver:
+  Lock Session:
+    name: Lock Session
+    keys:
+    - Meta+`
+KDE Keyboard Layout Switcher:
+  Switch to Next Keyboard Layout:
+    name: Switch to Next Keyboard Layout
+    keys:
+    - Meta+Space
+org.kde.spectacle.desktop:
+  RectangularRegionScreenShot:
+    name: Capture Rectangular Region
+    keys:
+    - Meta+1
+  ActiveWindowScreenShot:
+    name: Capture Active Window
+    keys:
+    - Meta+2
+  FullScreenScreenShot:
+    name: Capture Entire Desktop
+    keys:
+    - Meta+3
+  _launch:
+    name: Spectacle
+    keys:
+    - Print
+  OpenWithoutScreenshot:
+    name: Launch without taking a screenshot
+    keys:
+    - Meta+Shift+S
