@@ -11,7 +11,6 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from subprocess import Popen
-from subprocess import run as run_cmd
 from tempfile import NamedTemporaryFile
 
 import yaml
@@ -60,6 +59,14 @@ class Environment:
             return user_path.read_text()
         except FileNotFoundError:
             return ""
+
+    def write_cfg_file(self, base_name: str, data: str):
+        if self.interactive:
+            (Path(__file__).parent / base_name).write_text(data)
+        else:
+            user_path = self.USER_DIR / base_name
+            user_path.parent.mkdir(parents=True, exist_ok=True)
+            user_path.write_text(data)
 
 
 class KWinCtl(ServiceInterface):
@@ -130,7 +137,7 @@ class KWinCtl(ServiceInterface):
         self.env.log.info(f"reaped {'; '.join(reaped)}")
 
     async def _register_dbus_service(self):
-        self.bus = await Bus(bus_type=BusType.SESSION).connect()
+        self.bus = await Bus().connect()
         self.bus.export("/", self)
         await self.bus.request_name(self.NAME)
         self.env.log.info(f"{self.NAME} D-Bus service running...")
@@ -279,6 +286,9 @@ class ShortcutInfo:
 
 class Bus(MessageBus):
     def __init__(self, *args, **kwargs):
+        if not kwargs:
+            kwargs.update(bus_type=BusType.SESSION)
+
         super().__init__(*args, **kwargs)
         self._iface_cache = {}
 
@@ -379,8 +389,8 @@ class HotkeysConfig:
 
         overrides = yaml.safe_load(self.env.read_cfg_file("overrides.yaml")) or {}
 
-        for comp_id, component in overrides.items():
-            for act_id, action in component["actions"].items():
+        for comp_id, actions in overrides.items():
+            for act_id, action in actions.items():
                 override = {"component_id": comp_id, "action_id": act_id} | action
                 action["keys"] = [
                     validate_key(k, f"Override {override}") for k in action.get("keys", [])
@@ -423,58 +433,64 @@ def json_default(x) -> str:
     return x.toString() if isinstance(x, KeySequence) else str(x)
 
 
-async def list_all_shortcuts(bus: Bus):
-    all_shortcuts = {}
-    for s in await bus.kgl_all_shortcuts():
-        if s.action_id.startswith("kwinctl_"):
-            continue
+class OverridesManager:
+    def __init__(self, args):
+        self.bus: Bus | None = None
+        self.args = args
+        self.env = Environment()
 
-        if s.component_id not in all_shortcuts:
-            all_shortcuts[s.component_id] = {"name": s.component_name, "actions": {}}
+    async def dump_nondefault(self):
+        self.bus = await Bus().connect()
 
-        all_shortcuts[s.component_id]["actions"][s.action_id] = {
-            "name": s.action_name,
-            "keys": s.active_keys,
-            "default_keys": s.default_keys,
-        }
-
-    return all_shortcuts
-
-
-async def record_overrides(args):
-    bus = await Bus(bus_type=BusType.SESSION).connect()
-
-    orig = await list_all_shortcuts(bus)
-    run_cmd(["systemsettings", "kcm_keys"], check=True)
-    new = await list_all_shortcuts(bus)
-
-    modified = {}
-
-    for c_id, component in new.items():
-        if c_id in orig:
-            for a_id, action in component["actions"].items():
-                if orig[c_id]["actions"][a_id]["keys"] != action["keys"]:
-                    if c_id not in modified:
-                        modified[c_id] = {"name": component["name"], "actions": {}}
-                    modified[c_id]["actions"][a_id] = action
+        if self.args.reset_overrides:
+            overrides = {}
         else:
-            modified[c_id] = component
+            overrides = HotkeysConfig(self.env).overrides
 
-    for name, data in {
-        "orig": orig,
-        "new": new,
-        "modified": modified,
-    }.items():
-        Path(f"overrides-{name}.yaml").write_text(yaml.safe_dump(data, sort_keys=False))
+        active = await self._active_shortcuts()
+        for (comp_id, act_id), action in active.items():
+            if action["keys"] != action["default_keys"]:
+                overrides[(comp_id, act_id)] = action
+
+        overrides_export = defaultdict(dict)
+        for (comp_id, act_id), action in overrides.items():
+            overrides_export[comp_id][act_id] = {
+                "name": action["name"],
+                "keys": [str(k) for k in action["keys"]],
+            }
+
+        self.env.write_cfg_file(
+            "overrides.yaml", yaml.safe_dump(dict(overrides_export), sort_keys=False)
+        )
+
+    async def _active_shortcuts(self) -> dict[tuple[str, str], dict]:
+        all_shortcuts = {}
+        for s in await self.bus.kgl_all_shortcuts():
+            if s.action_id.startswith("kwinctl_"):
+                continue
+
+            all_shortcuts[(s.component_id, s.action_id)] = {
+                "name": s.action_name,
+                "keys": s.active_keys,
+                "default_keys": s.default_keys,
+            }
+
+        return all_shortcuts
 
 
 async def main():
     parser = ArgumentParser()
-    parser.add_argument("-O", "--record-overrides", action="store_true")
+    parser.add_argument(
+        "-O",
+        "--dump-overrides",
+        action="store_true",
+        help="Dump all global shortcuts which are set to non-default keys into overrides.yaml",
+    )
+    parser.add_argument("-X", "--reset-overrides", action="store_true")
     args = parser.parse_args()
 
-    if args.record_overrides:
-        await record_overrides(args)
+    if args.dump_overrides:
+        await OverridesManager(args).dump_nondefault()
     else:
         await KWinCtl().run()
 

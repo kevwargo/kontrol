@@ -1,18 +1,44 @@
-kwin:
-  name: KWin
-  actions:
-    Window Above Other Windows:
-      name: Keep Window Above Others
-      keys:
-        - Meta++
 kmix:
-  name: Audio Volume
-  actions:
-    decrease_volume:
-      name: Decrease Volume
-      keys:
-        - Meta+F2
-    increase_volume:
-      name: Increase Volume
-      keys:
-        - Meta+F3
+  decrease_volume:
+    name: Decrease Volume
+    keys:
+    - Meta+F2
+  increase_volume:
+    name: Increase Volume
+    keys:
+    - Meta+F3
+kwin:
+  Window Above Other Windows:
+    name: Keep Window Above Others
+    keys:
+    - Meta++
+  Window to Next Screen:
+    name: Move Window to Next Screen
+    keys:
+    - Meta+Shift+Down
+  Window to Previous Screen:
+    name: Move Window to Previous Screen
+    keys:
+    - Meta+Shift+Up
+org.kde.dolphin.desktop:
+  _launch:
+    name: Dolphin
+    keys:
+    - Meta+X
+plasmashell:
+  cycleNextAction:
+    name: Next History Item
+    keys:
+    - Meta+Shift+PgDown
+  cyclePrevAction:
+    name: Previous History Item
+    keys:
+    - Meta+Shift+PgUp
+  edit_clipboard:
+    name: "Edit Contents\u2026"
+    keys:
+    - Meta+Shift+E
+  show-on-mouse-pos:
+    name: Show Clipboard Items at Mouse Position
+    keys:
+    - Meta+Shift+K
