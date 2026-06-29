@@ -77,7 +77,7 @@ class KWinCtl(ServiceInterface):
         self.env = Environment()
         self.bus: Bus | None = None
         self.main_script = None
-        self.remaps: dict[tuple, ShortcutInfo] = {}
+        self.remaps: list[ShortcutInfo] = []
         self.hotkeys = HotkeysConfig(self.env)
         self._stop_event = asyncio.Event()
         self._shutting_down = False
@@ -193,14 +193,17 @@ class KWinCtl(ServiceInterface):
                 keys.difference_update(self.hotkeys.bindings)
 
             if set(s.active_keys) != keys:
-                self.remaps[tuple(keys)] = s
+                s.remapped_keys = list(keys)
+                self.remaps.append(s)
 
-        for new_keys, remap in self.remaps.items():
-            self.env.log.info(f"Remapping {remap} to {new_keys}")
-            await self.bus.kgl_set_keys(remap.to_dbus(), [[k.to_dbus()] for k in new_keys])
+        for remap in self.remaps:
+            self.env.log.info(f"Remapping {remap}")
+            await self.bus.kgl_set_keys(
+                remap.to_dbus(), [[k.to_dbus()] for k in remap.remapped_keys]
+            )
 
     async def _restore_remaps(self):
-        for remap in self.remaps.values():
+        for remap in self.remaps:
             self.env.log.info(f"Restoring {remap}")
             await self.bus.kgl_set_keys(
                 remap.to_dbus(), [[k.to_dbus()] for k in remap.active_keys]
@@ -247,6 +250,25 @@ class KWinCtl(ServiceInterface):
             self.env.log.info("Shutdown complete.")
 
 
+class KeySequence(QKeySequence):
+    def __init__(self, raw):
+        super().__init__(raw)
+        if not self.toString():
+            raise ValueError(f"Invalid key {raw!r}")
+
+    def __str__(self):
+        return self.toString()
+
+    def __repr__(self):
+        return repr(self.toString())
+
+    def to_dbus(self) -> list[int]:
+        numeric = [k.toCombined() for k in self]
+        if (rem := 4 - len(numeric)) > 0:
+            numeric.extend([0] * rem)
+        return numeric
+
+
 @dataclass
 class ShortcutInfo:
     action_id: str
@@ -257,6 +279,7 @@ class ShortcutInfo:
     context_name: str
     active_keys: list[KeySequence]
     default_keys: list[KeySequence]
+    remapped_keys: list[KeySequence] | None = None
 
     @classmethod
     def from_list(cls, fields: list[str]):
@@ -272,9 +295,10 @@ class ShortcutInfo:
         )
 
     def __str__(self):
+        remap = f" remapped to {self.remapped_keys}" if self.remapped_keys is not None else ""
         return (
             f"{self.component_id}({self.component_name}):{self.action_id}({self.action_name}):"
-            f" {self.active_keys}"
+            f" {self.active_keys}{remap}"
         )
 
     def __repr__(self):
@@ -399,25 +423,6 @@ class HotkeysConfig:
                 self.overrides[(comp_id, act_id)] = action
                 for k in action["keys"]:
                     self.bindings[k].append({"type": "override"} | override)
-
-
-class KeySequence(QKeySequence):
-    def __init__(self, raw):
-        super().__init__(raw)
-        if not self.toString():
-            raise ValueError(f"Invalid key {raw!r}")
-
-    def __str__(self):
-        return self.toString()
-
-    def __repr__(self):
-        return repr(self.toString())
-
-    def to_dbus(self) -> list[int]:
-        numeric = [k.toCombined() for k in self]
-        if (rem := 4 - len(numeric)) > 0:
-            numeric.extend([0] * rem)
-        return numeric
 
 
 def validate_key(raw: str | None, err_msg: str) -> KeySequence:
