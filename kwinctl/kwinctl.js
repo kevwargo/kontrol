@@ -7,6 +7,14 @@
 
 const rulesByWindowId = {};
 
+function wfmt(w) {
+  return `${w.resourceName}(${w.caption})${w.internalId}`;
+}
+
+function wsfmt(ws) {
+  return `[${(ws ?? []).map(wfmt).join("; ")}]`;
+}
+
 function triggerRule({ id, key, candidates, command, auto }) {
   const log = (msg) => print(`kwinctl rule ${id}: ${msg}`);
 
@@ -104,9 +112,6 @@ function onWindowRemove(window) {
 }
 
 function onWindowActivate(window) {}
-
-const wfmt = (w) => `${w.resourceName}(${w.caption})${w.internalId}`;
-const wsfmt = (ws) => `[${(ws ?? []).map(wfmt).join("; ")}]`;
 
 RULES.forEach((r) => {
   print(`kwinctl: binding ${r.key} to rule ${JSON.stringify(r)}`);
