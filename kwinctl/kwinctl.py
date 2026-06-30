@@ -148,7 +148,7 @@ class KWinCtl(ServiceInterface):
             await self.bus.notify(
                 "Snippet activated",
                 "\n".join(
-                    f"{k}: <u><i>{v}</i></u>" for k, v in body_fields.items() if v is not None
+                    f"{k}: <u><b>{v}</b></u>" for k, v in body_fields.items() if v is not None
                 ),
                 notify.get("timeout", 3000),
             )
