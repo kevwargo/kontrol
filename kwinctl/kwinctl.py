@@ -10,7 +10,7 @@ from argparse import ArgumentParser
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from subprocess import Popen
+from subprocess import PIPE, Popen
 from tempfile import NamedTemporaryFile
 
 import yaml
@@ -88,16 +88,21 @@ class KWinCtl(ServiceInterface):
         self.env.log.info(f"Started shell command [{p.pid}]({cmd})")
 
     @method()
-    def RunCommand(self, varargs: "av"):  # noqa:F821
-        cmd = []
-        for idx, arg in enumerate(varargs):
-            if not (arg.signature == "s" and isinstance(arg.value, str)):
-                raise ValueError(f"Invalid arg {idx}: val={arg.value!r} sig={arg.signature}")
+    def RunCommand(self, cmd_id: "s"):  # noqa:F821
+        cmd = self.hotkeys.commands.get(cmd_id)
+        if not cmd:
+            self.env.log.error(f"Command {cmd_id} not found")
+            return
 
-            cmd.append(arg.value)
-
-        p = Popen(cmd, start_new_session=True)
-        self.env.log.info(f"Started command [{p.pid}]({cmd})")
+        if cmd_args := cmd.get("cmd"):
+            p = Popen(cmd_args, start_new_session=True)
+            self.env.log.info(f"Started command [{p.pid}]({cmd_args})")
+        elif shell := cmd.get("shell"):
+            self.RunShellCommand(shell)
+        elif prompt := cmd.get("prompt"):
+            asyncio.create_task(self._show_prompt(prompt))
+        elif snippet := cmd.get("snippet"):
+            asyncio.create_task(self._exec_snippet(cmd_id, snippet))
 
     async def run(self):
         self._register_signals()
@@ -113,6 +118,40 @@ class KWinCtl(ServiceInterface):
             self.env.log.debug("Run loop exiting...")
         finally:
             await self._shutdown()
+
+    async def _show_prompt(self, prompt: str):
+        await self.bus.krunner_query(prompt)
+        self.env.log.info(f"Showed prompt {prompt!r}")
+
+    async def _exec_snippet(self, cmd_id: str, snippet: dict):
+        cmd = snippet.get("cmd")
+
+        if not (text := snippet.get("text")):
+            p = await asyncio.create_subprocess_shell(cmd, stdout=PIPE, stderr=PIPE)
+            out, err = await p.communicate()
+            text = out.decode()
+            if p.returncode != 0:
+                self.env.log.error(
+                    f"Command {cmd!r} failed with code {p.returncode}. out:{out} err:{err}"
+                )
+                return
+
+        await self.bus.klipper_set(text)
+
+        if notify := snippet.get("notify"):
+            body_fields = {
+                "Name": cmd_id,
+                "Command": cmd if notify.get("details") else None,
+                "Details": text if notify.get("details") else None,
+            }
+
+            await self.bus.notify(
+                "Snippet activated",
+                "\n".join(
+                    f"{k}: <u><i>{v}</i></u>" for k, v in body_fields.items() if v is not None
+                ),
+                notify.get("timeout", 3000),
+            )
 
     def _register_signals(self):
         loop = asyncio.get_running_loop()
@@ -134,7 +173,8 @@ class KWinCtl(ServiceInterface):
                 break
             reaped.append(f"{pid}(status: {status})")
 
-        self.env.log.info(f"reaped {'; '.join(reaped)}")
+        if reaped:
+            self.env.log.info(f"reaped {'; '.join(reaped)}")
 
     async def _register_dbus_service(self):
         self.bus = await Bus().connect()
@@ -349,6 +389,23 @@ class Bus(MessageBus):
             "org.kde.kwin.Script",
         )
 
+    async def krunner_query(self, prompt: str):
+        iface = await self._get_iface("org.kde.krunner", "/App", "org.kde.krunner.App")
+        await iface.call_display()
+        await iface.call_query(prompt)
+
+    async def klipper_set(self, text: str):
+        iface = await self._get_iface("org.kde.klipper", "/klipper", "org.kde.klipper.klipper")
+        await iface.call_set_clipboard_contents(text)
+
+    async def notify(self, summary: str, body: str, timeout: int):
+        iface = await self._get_iface(
+            "org.freedesktop.Notifications",
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+        )
+        await iface.call_notify("kwinctl", 0, "", summary, body, [], {}, timeout)
+
     async def send_msg(self, **kwargs):
         return (await self.call(Message(**kwargs))).body
 
@@ -365,7 +422,7 @@ class Bus(MessageBus):
 
 
 class HotkeysConfig:
-    COMMAND_KEYS = {"shell", "cmd", "prompt"}
+    COMMAND_KEYS = {"shell", "cmd", "prompt", "snippet"}
 
     def __init__(self, env: Environment):
         self.env = env
@@ -396,11 +453,9 @@ class HotkeysConfig:
             self.bindings[rule["key"]].append({"type": "rule"} | rule)
 
     def _load_commands(self):
-        self.commands = [
-            {"id": k} | c
-            for k, c in (yaml.safe_load(self.env.read_cfg_file("commands.yaml")) or {}).items()
-        ]
-        for cmd in self.commands:
+        self.commands = yaml.safe_load(self.env.read_cfg_file("commands.yaml")) or {}
+
+        for cmd in [{"id": k} | c for k, c in self.commands.items()]:
             cmd["key"] = validate_key(cmd.get("key"), f"Command {cmd}")
             if len(self.COMMAND_KEYS.intersection(cmd)) != 1:
                 raise ValueError(

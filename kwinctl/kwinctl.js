@@ -2,7 +2,7 @@
   injected above from python:
   DBUS_NAME: string;
   RULES: Rule[];
-  COMMANDS: Command[];
+  COMMANDS: {string: Command};
 */
 
 const rulesByWindowId = {};
@@ -44,19 +44,10 @@ function triggerRule({ id, key, candidates, command, auto }) {
   }
 }
 
-function triggerCommand({ id, key, shell, cmd, prompt }) {
-  print(`kwinctl cmd ${id} triggered by ${key}`);
+function triggerCommand({ id, cmd }) {
+  print(`kwinctl cmd ${id} triggered by ${cmd.key}`);
 
-  if (shell) {
-    print(`running shell ${shell}`);
-    selfDBus("RunShellCommand", shell);
-  } else if (cmd) {
-    print(`running raw ${cmd}`);
-    selfDBus("RunCommand", cmd);
-  } else if (prompt) {
-    print(`showing prompt ${prompt}`);
-    krunnerPrompt(prompt);
-  }
+  selfDBus("RunCommand", id);
 }
 
 function selfDBus(method, ...args) {
@@ -123,10 +114,10 @@ RULES.forEach((r) => {
   );
 });
 
-COMMANDS.forEach((c) => {
-  print(`kwinctl: binding ${c.key} to command ${JSON.stringify(c)}`);
-  registerShortcut(`kwinctl_cmd_${c.id}`, `KWinCTL: Run ${c.id}`, c.key, () =>
-    triggerCommand(c),
+Object.entries(COMMANDS).forEach(([id, cmd]) => {
+  print(`kwinctl: binding ${cmd.key} to command ${JSON.stringify(cmd)}`);
+  registerShortcut(`kwinctl_cmd_${id}`, `KWinCTL: Run ${id}`, cmd.key, () =>
+    triggerCommand({ id, cmd }),
   );
 });
 

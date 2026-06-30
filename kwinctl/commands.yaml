@@ -6,6 +6,12 @@
 #   shell: string
 #   cmd: string[]
 #   prompt: string
+#   snippet:
+#     text: string
+#     cmd: string
+#     notify:
+#       details: boolean
+#       timeout: number
 
 bt-on:
   key: Meta+Shift+B
@@ -22,3 +28,16 @@ mocp-g:
 open-foot:
   key: Meta+Shift+T
   shell: foot -w 1200x800
+email:
+  key: Meta+Alt+2
+  snippet:
+    text: jarasz.kevwargo@gmail.com
+    notify:
+      details: true
+mfa-github:
+  key: Meta+Shift+G
+  snippet:
+    cmd: mfacli --password-command ksshaskpass print github
+    notify:
+      details: true
+      timeout: 1000
