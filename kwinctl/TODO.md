@@ -8,5 +8,5 @@
       strip: bool
       strip-head: bool
       strip-tail: bool
-      regexp: (default ' \n\r\t')
+      chars: (default ' \n\r\t')
 ```
