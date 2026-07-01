@@ -41,3 +41,9 @@ mfa-github:
     notify:
       details: true
       timeout: 1000
+dtt:
+  key: Meta+Alt+D
+  snippet:
+    cmd: date +%Y%m%d-%H%M%S
+    notify:
+      details: true
