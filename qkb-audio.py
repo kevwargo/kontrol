@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 
-
 import json
+import logging
+import re
 import signal
 import sys
 from subprocess import check_output
 
-from PyQt6.QtCore import QProcess, Qt
+from PyQt6.QtCore import QProcess, Qt, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+
+logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(asctime)s %(message)s")
 
 
 class SinkRow(QLabel):
@@ -16,6 +19,8 @@ class SinkRow(QLabel):
 
 
 class MenuDialog(QWidget):
+    PACTL_EVENT_RX = re.compile(b"^Event '(new|remove)' on sink #[0-9]+")
+
     def __init__(self, app: QApplication):
         super().__init__()
         self.app = app
@@ -27,8 +32,11 @@ class MenuDialog(QWidget):
 
         self.sink_rows: dict[str, SinkRow] = {}
         self.refresh_sink_rows()
+        self.start_watcher()
 
     def refresh_sink_rows(self):
+        logging.info("refreshing sinks")
+
         new_sinks = {
             sink["name"]: sink["description"]
             for sink in json.loads(
@@ -48,6 +56,32 @@ class MenuDialog(QWidget):
             else:
                 sink_row = self.sink_rows[name] = SinkRow(description)
                 self.layout.addWidget(sink_row)
+
+    def start_watcher(self):
+        self.watch_proc = QProcess(self)
+        self.watch_proc.setProgram("pactl")
+        self.watch_proc.setArguments(["subscribe"])
+        self.watch_proc.readyReadStandardOutput.connect(self.on_pactl_event)
+
+        self.timer = QTimer()
+        self.timer.setSingleShot(True)
+        self.timer.setInterval(50)
+        self.timer.timeout.connect(self.refresh_sink_rows)
+
+        self.app.aboutToQuit.connect(self.stop_watcher)
+        self.watch_proc.start()
+
+    def stop_watcher(self):
+        if self.watch_proc.state() != QProcess.ProcessState.NotRunning:
+            self.watch_proc.terminate()
+            self.watch_proc.waitForFinished(1000)
+
+    def on_pactl_event(self):
+        out = self.watch_proc.readAllStandardOutput()
+        for line in out.data().splitlines():
+            if self.PACTL_EVENT_RX.match(line):
+                logging.info(line.decode())
+                self.timer.start()
 
 
 def main():
