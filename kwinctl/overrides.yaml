@@ -86,3 +86,7 @@ mediacontrol:
     keys:
     - Meta+>
     - Media Play
+org.kde.konsole.desktop:
+  _launch:
+    name: Konsole
+    keys: [] # The default is Ctrl+Alt+T which is needed as local hotkey in Krusader
