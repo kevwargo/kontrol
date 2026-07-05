@@ -8,6 +8,7 @@ dependencies = [
     "dbus-next>=0.2.3",
     "pyqt6>=6.11.0",
     "pyyaml>=6.0.3",
+    "qasync>=0.28.0",
 ]
 
 [tool.black]
