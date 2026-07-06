@@ -144,7 +144,6 @@ class MenuDialog(QWidget):
         await btdev_mgr.start()
 
         await self.done_event.wait()
-        log("done_event waited successfully")
 
     async def update_sinks(self):
         sinks_buf, defsink_buf = await asyncio.gather(
@@ -235,6 +234,7 @@ class MenuDialog(QWidget):
 
     def on_exit(self):
         log("Cleanup on_exit()")
+
         if (
             self.pactl_subscribe
             and self.pactl_subscribe.state() != QProcess.ProcessState.NotRunning
@@ -244,7 +244,7 @@ class MenuDialog(QWidget):
 
         if self.sysbus:
             self.sysbus.disconnect()
-            log(f"{self.sysbus} disconnected")
+            log(f"Disconnected {self.sysbus}")
 
         self.done_event.set()
 
