@@ -5,7 +5,7 @@ pkgdesc="A set of tools to configure Plasma 6 (Wayland) in a predictable way"
 arch=(any)
 license=(MIT)
 
-depends=(python python-dbus-next python-yaml python-pyqt6)
+depends=(python python-dbus-next python-yaml python-pyqt6 python-qasync)
 
 source=(kontrol_src.tar.zst)
 sha256sums=(SKIP)

@@ -7,7 +7,7 @@ import re
 import signal
 import sys
 from functools import cached_property
-from subprocess import check_output
+from subprocess import PIPE
 
 from dbus_next import BusType
 from dbus_next.aio import MessageBus
@@ -16,118 +16,7 @@ from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 from qasync import QEventLoop
 
 logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(asctime)s %(message)s")
-
-
-class MenuDialog(QWidget):
-    PACTL_EVENT_RX = re.compile(b"^Event '(new|remove|change)' on (card|sink) #[0-9]+")
-
-    def __init__(self, app: QApplication):
-        super().__init__()
-        self.app = app
-
-        self.setWindowTitle("Choose audio output")
-        self.setWindowFlag(Qt.WindowType.Dialog)
-
-        self.layout = QVBoxLayout(self)
-        self.sink_rows: dict[str, QLabel] = {}
-        self.bt_rows: dict[str, QLabel] = {}
-        self.done_event = asyncio.Event()
-        self.pactl_subscribe: QProcess | None = None
-        self.sinks_timer: QTimer | None = None
-        self.sysbus: MessageBus | None = None
-
-    async def run(self):
-        asyncio.get_running_loop().add_signal_handler(signal.SIGINT, self.on_exit)
-        self.start_watcher()
-
-        self.update_sinks()
-        self.show()
-
-        self.sysbus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-        btdev_mgr = BTDeviceManager(self.sysbus, self.on_new_bt, self.on_bt_removed)
-        await btdev_mgr.start()
-
-        await self.done_event.wait()
-        logging.info("done_event waited successfully")
-
-    def update_sinks(self):
-        logging.info("updating sinks...")
-        new_sinks = {
-            s.name: s.description
-            for s in map(
-                Sink, json.loads(check_output(["pactl", "--format=json", "list", "sinks"]))
-            )
-            if s.available
-        }
-        default_sink = check_output(["pactl", "get-default-sink"], encoding="utf-8").rstrip("\n")
-
-        removed = set(self.sink_rows).difference(new_sinks)
-        for name in removed:
-            old = self.sink_rows.pop(name)
-            self.layout.removeWidget(old)
-            old.deleteLater()
-
-        for name, description in new_sinks.items():
-            if name == default_sink:
-                description = f"<b>{description}</b>"
-
-            if sink_row := self.sink_rows.get(name):
-                sink_row.setText(description)
-            else:
-                sink_row = self.sink_rows[name] = QLabel(description)
-                self.layout.addWidget(sink_row)
-
-    def start_watcher(self):
-        self.pactl_subscribe = QProcess(self)
-        self.pactl_subscribe.setProgram("pactl")
-        self.pactl_subscribe.setArguments(["subscribe"])
-        self.pactl_subscribe.readyReadStandardOutput.connect(self.on_pactl_event)
-
-        self.sinks_timer = QTimer(self)
-        self.sinks_timer.setSingleShot(True)
-        self.sinks_timer.setInterval(50)
-        self.sinks_timer.timeout.connect(self.update_sinks)
-
-        self.pactl_subscribe.start()
-
-    def on_pactl_event(self):
-        out = self.pactl_subscribe.readAllStandardOutput()
-        for line in out.data().splitlines():
-            if self.PACTL_EVENT_RX.match(line):
-                self.sinks_timer.start()
-
-    def on_new_bt(self, dev: dict):
-        label = f"[BT] {dev['mac']}({dev['name']})"
-        if row := self.bt_rows.get(dev["id"]):
-            row.setText(label)
-        else:
-            row = self.bt_rows[dev["id"]] = QLabel(label)
-            self.layout.addWidget(row)
-
-    def on_bt_removed(self, dev_id: str):
-        if row := self.bt_rows.pop(dev_id, None):
-            self.layout.removeWidget(row)
-            row.deleteLater()
-
-    def closeEvent(self, ev):
-        logging.info(f"CloseEvent: {ev}")
-        self.on_exit()
-        ev.accept()
-
-    def on_exit(self):
-        logging.info("Cleanup on_exit()")
-        if (
-            self.pactl_subscribe
-            and self.pactl_subscribe.state() != QProcess.ProcessState.NotRunning
-        ):
-            self.pactl_subscribe.terminate()
-            self.pactl_subscribe.waitForFinished(1000)
-
-        if self.sysbus:
-            self.sysbus.disconnect()
-            logging.info(f"{self.sysbus} disconnected")
-
-        self.done_event.set()
+log = logging.info
 
 
 class Sink:
@@ -144,20 +33,36 @@ class Sink:
 
     @cached_property
     def available(self) -> bool:
-        a = (act_port := self._data.get("active_port")) and any(
+        return (act_port := self._data.get("active_port")) and any(
             p["name"] == act_port and p["availability"] != "not available"
             for p in self._data.get("ports") or []
         )
-        logging.info(f"sink {self.name}({self.description}) available: {a}")
 
-        return a
+
+class BTDevice:
+    def __init__(self, dbus_path: str, mac: str, name: str | None):
+        self.id = dbus_path
+        self.mac = mac
+        self.name = name
+
+
+class AudioOutput:
+    def __init__(self, sink: Sink | None = None, bt_dev: BTDevice | None = None):
+        self.sink = sink
+        self.bt_dev = bt_dev
+        self.is_default = False
+
+    @property
+    def id(self) -> str:
+        if self.bt_dev:
+            return f"bt:{self.bt_dev.mac}"
+
+        return f"sink:{self.sink.name}"
 
 
 class BTDeviceManager:
-    def __init__(self, bus: MessageBus, on_new=None, on_removed=None):
+    def __init__(self, bus: MessageBus):
         self.bus = bus
-        self.on_new = on_new or (lambda dev: None)
-        self.on_removed = on_removed or (lambda dev_id: None)
 
         self._event = asyncio.Event()
         self._devices_dedup = set()
@@ -168,38 +73,186 @@ class BTDeviceManager:
             "org.freedesktop.DBus.ObjectManager"
         )
         manager.on_interfaces_added(self.iface_added)
-        manager.on_interfaces_removed(self.iface_removed)
+        manager.on_interfaces_removed(lambda p, ii: log(f"dbus removed: {p}({sorted(ii)})"))
+
         objects = await manager.call_get_managed_objects()
         for path, obj_ifaces in objects.items():
-            if self.send_new(path, obj_ifaces):
-                logging.info(f"Dev {path} already available")
+            if dev := obj_ifaces.get("org.bluez.Device1"):
+                self.notify_new_device(path, dev)
+            elif adapter := obj_ifaces.get("org.bluez.Adapter1"):
+                self.notify_adapter(adapter)
 
-    def send_new(self, path: str, obj: dict):
-        if not (dev := obj.get("org.bluez.Device1")):
-            return False
-
+    def notify_new_device(self, path: str, dev: dict):
         name = None
         if name_var := dev.get("Name"):
             name = name_var.value
 
-        self.on_new({"id": path, "mac": dev["Address"].value, "name": name})
+        self.on_new_device(BTDevice(dbus_path=path, mac=dev["Address"].value, name=name))
         self._devices_dedup.add(path)
 
-        return True
+    def notify_adapter(self, adapter):
+        log(f"New adapter: {adapter}")
+        self.on_adapter_state_change(True)
 
     def iface_added(self, path: str, obj_ifaces: dict):
-        if path in self._devices_dedup:
-            logging.info(f"Dev {path} appeared, duplicate")
-        elif self.send_new(path, obj_ifaces):
-            logging.info(f"Dev {path} appeared, notified")
+        log(f"dbus added: {path}({sorted(obj_ifaces)})")
+        if dev := obj_ifaces.get("org.bluez.Device1"):
+            if path not in self._devices_dedup:
+                self.notify_new_device(path, dev)
+        elif adapter := obj_ifaces.get("org.bluez.Adapter1"):
+            self.notify_adapter(adapter)
 
-    def iface_removed(self, path: str, ifaces: list):
-        if path in self._devices_dedup:
-            self.on_removed(path)
-            self._devices_dedup.remove(path)
-            logging.info(f"Dev {path} disappeared, notified")
-        else:
-            logging.info(f"Dev {path} disappeared, duplicate")
+    async def activate_adapter(self):
+        p = await asyncio.create_subprocess_exec("rfkill", ["unblock", "bluetooth"])
+        await p.wait()
+
+    def on_new_device(self, dev: BTDevice): ...
+    def on_adapter_state_change(self, state: bool): ...
+
+
+class MenuDialog(QWidget):
+    PACTL_EVENT_RX = re.compile(b"^Event '(new|remove|change)' on (card|sink) #[0-9]+")
+
+    def __init__(self, app: QApplication):
+        super().__init__()
+        self.app = app
+
+        self.setWindowTitle("Choose audio output")
+        self.setWindowFlag(Qt.WindowType.Dialog)
+
+        self.layout = QVBoxLayout(self)
+
+        self.rows: list[QLabel] = []
+        self.audio_outputs: dict[str, AudioOutput] = {}
+
+        self.pactl_subscribe: QProcess | None = None
+        self.sinks_timer: QTimer | None = None
+        self.sysbus: MessageBus | None = None
+
+        self.done_event = asyncio.Event()
+
+    async def run(self):
+        asyncio.get_running_loop().add_signal_handler(signal.SIGINT, self.on_exit)
+        self.start_watcher()
+
+        await self.update_sinks()
+        self.show()
+
+        self.sysbus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+        btdev_mgr = BTDeviceManager(self.sysbus)
+        btdev_mgr.on_new_device = self.on_new_bt
+        await btdev_mgr.start()
+
+        await self.done_event.wait()
+        log("done_event waited successfully")
+
+    async def update_sinks(self):
+        sinks_buf, defsink_buf = await asyncio.gather(
+            cmd_output("pactl", "--format=json", "list", "sinks"),
+            cmd_output("pactl", "get-default-sink"),
+        )
+        available_sinks = {s.name: s for s in map(Sink, json.loads(sinks_buf)) if s.available}
+        default_sink = defsink_buf.decode().rstrip("\n")
+
+        self.audio_outputs = {
+            i: o
+            for i, o in self.audio_outputs.items()
+            if o.bt_dev or (o.sink and o.sink.name in available_sinks)
+        }
+
+        for sink in available_sinks.values():
+            bt_matches = [
+                o
+                for o in self.audio_outputs.values()
+                if o.bt_dev and o.bt_dev.mac.replace(":", "_").upper() in sink.name.upper()
+            ]
+            if bt_matches:
+                o = bt_matches[0]
+                o.sink = sink
+            else:
+                o = AudioOutput(sink=sink)
+                self.audio_outputs[o.id] = o
+
+            o.is_default = sink.name == default_sink
+
+        for o in self.audio_outputs.values():
+            if o.bt_dev and o.sink and o.sink.name not in available_sinks:
+                o.sink = None
+                o.is_default = False
+
+        self.update_ui()
+
+    def update_ui(self):
+        for row in self.rows:
+            self.layout.removeWidget(row)
+            row.deleteLater()
+
+        self.rows = []
+
+        for o in self.audio_outputs.values():
+            if o.sink:
+                label = o.sink.description
+            elif o.bt_dev:
+                label = f"BT(off): {o.bt_dev.name or o.bt_dev.mac}"
+
+            if o.is_default:
+                label = f"<b>{label}</b>"
+
+            widget = QLabel(label, parent=self)
+            self.layout.addWidget(widget)
+            self.rows.append(widget)
+
+    def start_watcher(self):
+        self.pactl_subscribe = QProcess(self)
+        self.pactl_subscribe.setProgram("pactl")
+        self.pactl_subscribe.setArguments(["subscribe"])
+        self.pactl_subscribe.readyReadStandardOutput.connect(self.on_pactl_event)
+
+        self.sinks_timer = QTimer(self)
+        self.sinks_timer.setSingleShot(True)
+        self.sinks_timer.setInterval(50)
+        self.sinks_timer.timeout.connect(lambda: asyncio.create_task(self.update_sinks()))
+
+        self.pactl_subscribe.start()
+
+    def on_pactl_event(self):
+        out = self.pactl_subscribe.readAllStandardOutput()
+        for line in out.data().splitlines():
+            if self.PACTL_EVENT_RX.match(line):
+                self.sinks_timer.start()
+
+    def on_new_bt(self, dev: BTDevice):
+        # TODO: fix extremely unlikely scenario, where sink is already present
+        # when adding new BTDevice
+        new_output = AudioOutput(bt_dev=dev)
+        self.audio_outputs[new_output.id] = new_output
+        self.update_ui()
+
+    def closeEvent(self, ev):
+        log(f"CloseEvent: {ev}")
+        self.on_exit()
+        ev.accept()
+
+    def on_exit(self):
+        log("Cleanup on_exit()")
+        if (
+            self.pactl_subscribe
+            and self.pactl_subscribe.state() != QProcess.ProcessState.NotRunning
+        ):
+            self.pactl_subscribe.terminate()
+            self.pactl_subscribe.waitForFinished(1000)
+
+        if self.sysbus:
+            self.sysbus.disconnect()
+            log(f"{self.sysbus} disconnected")
+
+        self.done_event.set()
+
+
+async def cmd_output(program: str, *args) -> bytes:
+    p = await asyncio.create_subprocess_exec(program, *args, stdout=PIPE)
+    out, _ = await p.communicate()
+    return out
 
 
 if __name__ == "__main__":
