@@ -499,7 +499,7 @@ class OverridesManager:
         self.args = args
         self.env = Environment()
 
-    async def dump_nondefault(self):
+    async def sync(self):
         self.bus = await Bus().connect()
 
         if self.args.reset_overrides:
@@ -509,8 +509,13 @@ class OverridesManager:
 
         active = await self._active_shortcuts()
         for (comp_id, act_id), action in active.items():
-            if action["keys"] != action["default_keys"]:
-                overrides[(comp_id, act_id)] = action
+            if self.args.components:
+                if comp_id not in self.args.components:
+                    continue
+            elif action["keys"] == action["default_keys"]:
+                continue
+
+            overrides[(comp_id, act_id)] = action
 
         overrides_export = defaultdict(dict)
         for (comp_id, act_id), action in overrides.items():
@@ -542,15 +547,21 @@ async def main():
     parser = ArgumentParser()
     parser.add_argument(
         "-O",
-        "--dump-overrides",
+        "--sync-overrides",
         action="store_true",
-        help="Dump all global shortcuts which are set to non-default keys into overrides.yaml",
+        help="Sync the current state of global shortcuts into overrides.yaml",
     )
     parser.add_argument("-X", "--reset-overrides", action="store_true")
+    parser.add_argument(
+        "-c",
+        "--components",
+        action="append",
+        help="Instead of non-default, sync shortcuts from these components",
+    )
     args = parser.parse_args()
 
-    if args.dump_overrides:
-        await OverridesManager(args).dump_nondefault()
+    if args.sync_overrides:
+        await OverridesManager(args).sync()
     else:
         await KWinCtl().run()
 
