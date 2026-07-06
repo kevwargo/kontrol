@@ -22,9 +22,6 @@ bt-off:
 kscreen-toggle-laptop:
   key: Meta+Alt+X
   shell: kscreen-toggle-laptop
-mocp-g:
-  key: Meta+Q
-  shell: mocp -G
 open-foot:
   key: Meta+Shift+T
   shell: foot -w 1200x800

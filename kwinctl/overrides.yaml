@@ -84,5 +84,33 @@ mediacontrol:
   playpausemedia:
     name: Play/Pause media playback
     keys:
-    - Meta+>
-    - Media Play
+      - Media Play
+      - Meta+Q
+  previousmedia:
+    name: Media playback previous
+    keys:
+      - Media Previous
+      - Meta+<
+  nextmedia:
+    name: Media playback next
+    keys:
+      - Media Next
+      - Meta+>
+  seekbackwardmedia:
+    name: Media playback seek backward 5s
+    keys:
+      - Meta+[
+      - Media Rewind
+  seekforwardmedia:
+    name: Media playback seek forward 5s
+    keys:
+      - Media Fast Forward
+      - Meta+]
+  seekbackwardmedialong:
+    name: Media playback seek backward 30s
+    keys:
+      - Meta+{
+  seekforwardmedialong:
+    name: Media playback seek forward 30s
+    keys:
+      - Meta+}
