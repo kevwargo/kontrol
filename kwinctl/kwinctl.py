@@ -433,7 +433,8 @@ class HotkeysConfig:
         self._load_overrides()
 
         if errors := [
-            f"Key {k} is used multiple times: " + json.dumps(items, indent=2, default=json_default)
+            f"Key {k} is used multiple times: "
+            + json.dumps(items, indent=2, default=json_default, ensure_ascii=False)
             for k, items in self.bindings.items()
             if len(items) > 1
         ]:
