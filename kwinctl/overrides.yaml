@@ -80,6 +80,10 @@ org.kde.spectacle.desktop:
     name: Launch without taking a screenshot
     keys:
       - Meta+Shift+S
+org.kde.konsole.desktop:
+  _launch:
+    name: Konsole
+    keys: [] # The default is Ctrl+Alt+T which is needed as local hotkey in Krusader
 mediacontrol:
   playpausemedia:
     name: Play/Pause media playback
@@ -114,3 +118,4 @@ mediacontrol:
     name: Media playback seek forward 30s
     keys:
       - Meta+}
+
