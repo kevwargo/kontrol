@@ -11,15 +11,15 @@ jobs:
       image: archlinux:latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Prepare build env
-      run: |
-        pacman -Sy --noconfirm make fakeroot debugedit
-        useradd -m builder
-        chown -R builder:builder "$GITHUB_WORKSPACE"
-    - name: Build
-      env:
-        EXTRA_MAKEPKG_BUILD_FLAGS: "--nodeps"
-      run: runuser -u builder -- make build-pacman
-    - name: Show results
-      run: find $PWD -name .git -prune -o -print
+      - uses: actions/checkout@v4
+      - name: Prepare build env
+        run: |
+          pacman -Sy --noconfirm make fakeroot debugedit
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+      - name: Build
+        env:
+          EXTRA_MAKEPKG_BUILD_FLAGS: "--nodeps"
+        run: runuser -u builder -- make build-pacman
+      - name: Show results
+        run: find $PWD -name .git -prune -o -print

@@ -22,9 +22,6 @@ bt-off:
 kscreen-toggle-laptop:
   key: Meta+Alt+X
   shell: kscreen-toggle-laptop
-mocp-g:
-  key: Meta+Q
-  shell: mocp -G
 open-foot:
   key: Meta+Shift+T
   shell: foot -w 1200x800
@@ -41,3 +38,9 @@ mfa-github:
     notify:
       details: true
       timeout: 1000
+dtt:
+  key: Meta+Alt+D
+  snippet:
+    cmd: date +%Y%m%d-%H%M%S
+    notify:
+      details: true

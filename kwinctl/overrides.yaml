@@ -2,91 +2,120 @@ kmix:
   decrease_volume:
     name: Decrease Volume
     keys:
-    - Meta+F2
-    - Volume Down
+      - Meta+F2
+      - Volume Down
   increase_volume:
     name: Increase Volume
     keys:
-    - Meta+F3
-    - Volume Up
+      - Meta+F3
+      - Volume Up
   mute:
     name: Mute
     keys:
-    - Meta+F1
-    - Volume Mute
+      - Meta+F1
+      - Volume Mute
 kwin:
   Window Above Other Windows:
     name: Keep Window Above Others
     keys:
-    - Meta++
+      - Meta++
   Window to Next Screen:
     name: Move Window to Next Screen
     keys:
-    - Meta+Shift+Down
+      - Meta+Shift+Down
   Window to Previous Screen:
     name: Move Window to Previous Screen
     keys:
-    - Meta+Shift+Up
+      - Meta+Shift+Up
 org.kde.dolphin.desktop:
   _launch:
     name: Dolphin
     keys:
-    - Meta+X
+      - Meta+X
 plasmashell:
   cycleNextAction:
     name: Next History Item
     keys:
-    - Meta+Shift+PgDown
+      - Meta+Shift+PgDown
   cyclePrevAction:
     name: Previous History Item
     keys:
-    - Meta+Shift+PgUp
+      - Meta+Shift+PgUp
   edit_clipboard:
-    name: "Edit Contents\u2026"
+    name: "Edit Contents…"
     keys:
-    - Meta+Shift+E
+      - Meta+Shift+E
   show-on-mouse-pos:
     name: Show Clipboard Items at Mouse Position
     keys:
-    - Meta+Shift+K
+      - Meta+Shift+K
 ksmserver:
   Lock Session:
     name: Lock Session
     keys:
-    - Meta+`
+      - Meta+`
 KDE Keyboard Layout Switcher:
   Switch to Next Keyboard Layout:
     name: Switch to Next Keyboard Layout
     keys:
-    - Meta+Space
+      - Meta+Space
 org.kde.spectacle.desktop:
   RectangularRegionScreenShot:
     name: Capture Rectangular Region
     keys:
-    - Meta+1
+      - Meta+1
   ActiveWindowScreenShot:
     name: Capture Active Window
     keys:
-    - Meta+2
+      - Meta+2
   FullScreenScreenShot:
     name: Capture Entire Desktop
     keys:
-    - Meta+3
+      - Meta+3
   _launch:
     name: Spectacle
     keys:
-    - Print
+      - Print
   OpenWithoutScreenshot:
     name: Launch without taking a screenshot
     keys:
-    - Meta+Shift+S
-mediacontrol:
-  playpausemedia:
-    name: Play/Pause media playback
-    keys:
-    - Meta+>
-    - Media Play
+      - Meta+Shift+S
 org.kde.konsole.desktop:
   _launch:
     name: Konsole
     keys: [] # The default is Ctrl+Alt+T which is needed as local hotkey in Krusader
+mediacontrol:
+  playpausemedia:
+    name: Play/Pause media playback
+    keys:
+      - Media Play
+      - Meta+Q
+  previousmedia:
+    name: Media playback previous
+    keys:
+      - Media Previous
+      - Meta+<
+  nextmedia:
+    name: Media playback next
+    keys:
+      - Media Next
+      - Meta+>
+  seekbackwardmedia:
+    name: Media playback seek backward 5s
+    keys:
+      - Meta+[
+      - Media Rewind
+  seekforwardmedia:
+    name: Media playback seek forward 5s
+    keys:
+      - Media Fast Forward
+      - Meta+]
+  seekbackwardmedialong:
+    name: Media playback seek backward 30s
+    keys:
+      - Meta+{
+  seekforwardmedialong:
+    name: Media playback seek forward 30s
+    keys:
+      - Meta+}
+
