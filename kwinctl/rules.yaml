@@ -12,7 +12,7 @@ konsole:
   command: konsole
   cls: org.kde.konsole
   auto: true
-brave:
+browser:
   key: Meta+F
   command: brave
   cls: brave-browser
