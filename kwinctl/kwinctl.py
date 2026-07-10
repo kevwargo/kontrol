@@ -164,12 +164,13 @@ class KWinCtl(ServiceInterface):
         if not (text := snippet.get("text")):
             p = await asyncio.create_subprocess_shell(cmd, stdout=PIPE, stderr=PIPE)
             out, err = await p.communicate()
-            text = out.decode()
             if p.returncode != 0:
                 self.env.log.error(
                     f"Command {cmd!r} failed with code {p.returncode}. out:{out} err:{err}"
                 )
                 return
+
+            text = out.decode()
 
         await self.bus.klipper_set(text)
 
@@ -346,14 +347,14 @@ class KeySequence(QKeySequence):
 
 @dataclass
 class ShortcutInfo:
-    action_id: str
-    action_name: str
     component_id: str
-    component_name: str
-    context_id: str
-    context_name: str
+    action_id: str
     active_keys: list[KeySequence]
-    default_keys: list[KeySequence]
+    component_name: str = ""
+    action_name: str = ""
+    context_id: str = ""
+    context_name: str = ""
+    default_keys: list[KeySequence] | None = None
     remapped_keys: list[KeySequence] | None = None
 
     @classmethod
@@ -529,49 +530,73 @@ class OverridesManager:
     def __init__(self, env: Environment):
         self.bus: Bus | None = None
         self.env = env
+        self.hotkeys = HotkeysConfig(self.env)
 
     async def sync(self):
         self.bus = await Bus().connect()
 
-        if self.args.reset_overrides:
-            overrides = {}
-        else:
-            overrides = HotkeysConfig(self.env).overrides
-
-        active = await self._active_shortcuts()
-        for (comp_id, act_id), action in active.items():
-            if self.args.components:
-                if comp_id not in self.args.components:
-                    continue
-            elif action["keys"] == action["default_keys"]:
-                continue
-
-            overrides[(comp_id, act_id)] = action
-
-        overrides_export = defaultdict(dict)
-        for (comp_id, act_id), action in overrides.items():
-            overrides_export[comp_id][act_id] = {
-                "name": action["name"],
-                "keys": [str(k) for k in action["keys"]],
+        overrides: dict[tuple[str, str], ShortcutInfo] = {}
+        if not self.env.args.reset_overrides:
+            overrides = {
+                k: ShortcutInfo(
+                    component_id=k[0], action_id=k[1], action_name=o["name"], active_keys=o["keys"]
+                )
+                for k, o in self.hotkeys.overrides.items()
             }
 
-        self.env.write_cfg_file(
-            "overrides.yaml", yaml.safe_dump(dict(overrides_export), sort_keys=False)
+        for shortcut in await self._active_shortcuts():
+            if self.env.args.components:
+                if shortcut.component_id not in self.env.args.components:
+                    continue
+            elif shortcut.active_keys == shortcut.default_keys:
+                continue
+
+            existing_override = overrides.get((shortcut.component_id, shortcut.action_id))
+            if existing_override and set(existing_override.active_keys) == set(
+                shortcut.active_keys
+            ):
+                continue
+
+            overrides[(shortcut.component_id, shortcut.action_id)] = shortcut
+
+        overrides_export = defaultdict(dict)
+        for (comp_id, act_id), shortcut in overrides.items():
+            overrides_export[comp_id][act_id] = {
+                "name": shortcut.action_name,
+                "keys": [str(k) for k in shortcut.active_keys],
+            }
+
+        self.env.write_cfg("overrides.yaml", dict(overrides_export))
+
+    async def _active_shortcuts(self) -> list[ShortcutInfo]:
+        shortcuts = []
+        kwinctl_bindings = set(self.hotkeys.bindings).difference(
+            k for o in self.hotkeys.overrides.values() for k in o["keys"]
         )
 
-    async def _active_shortcuts(self) -> dict[tuple[str, str], dict]:
-        all_shortcuts = {}
         for s in await self.bus.kgl_all_shortcuts():
             if s.action_id.startswith("kwinctl_"):
                 continue
 
-            all_shortcuts[(s.component_id, s.action_id)] = {
-                "name": s.action_name,
-                "keys": s.active_keys,
-                "default_keys": s.default_keys,
-            }
+            s.active_keys = [k for k in s.active_keys if k not in kwinctl_bindings]
+            s.default_keys = [k for k in s.default_keys if k not in kwinctl_bindings]
 
-        return all_shortcuts
+            shortcuts.append(s)
+
+        return shortcuts
+
+        # all_shortcuts = {}
+        # for s in await self.bus.kgl_all_shortcuts():
+        #     if s.action_id.startswith("kwinctl_"):
+        #         continue
+
+        #     all_shortcuts[(s.component_id, s.action_id)] = {
+        #         "name": s.action_name,
+        #         "keys": s.active_keys,
+        #         "default_keys": s.default_keys,
+        #     }
+
+        # return all_shortcuts
 
 
 async def main():
