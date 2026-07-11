@@ -46,16 +46,22 @@ class Eval(ServiceInterface):
         with NamedTemporaryFile(mode="w+", prefix="kwin-eval-", suffix=".js") as f:
             expr = sys.argv[1]
             if ";" in expr:
-                expr = "(() => { %s%s return r; })()" % (expr, "" if expr.endswith(";") else ";")
+                expr = "(() => { %s; return r; })()" % expr.rstrip(";")
 
-            body = (SCRIPT % expr) + f'callDBus("{NAME}", "/", "{NAME}", "Return", "{self.id_}", value);'
+            body = (
+                SCRIPT % expr
+            ) + f'callDBus("{NAME}", "/", "{NAME}", "Return", "{self.id_}", value);'
 
             f.write(body)
             f.flush()
 
-            scripting = await self._get_iface("org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting")
+            scripting = await self._get_iface(
+                "org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting"
+            )
             script_id = await scripting.call_load_script(f.name)
-            script = await self._get_iface("org.kde.KWin", f"/Scripting/Script{script_id}", "org.kde.kwin.Script")
+            script = await self._get_iface(
+                "org.kde.KWin", f"/Scripting/Script{script_id}", "org.kde.kwin.Script"
+            )
             await script.call_run()
             await self._stop_event.wait()
             await script.call_stop()
@@ -76,7 +82,7 @@ class Eval(ServiceInterface):
             pass
 
         if not isinstance(value, str):
-            value = json.dumps(value, indent=2)
+            value = json.dumps(value, indent=2, ensure_ascii=False)
 
         print(value)
         self._stop_event.set()

@@ -20,7 +20,7 @@ async def main(key: str):
         "org.kde.KGlobalAccel"
     )
     res = await iface.call_global_shortcuts_by_key([[qk[0].toCombined(), 0, 0, 0]], [0])
-    print(json.dumps(res, indent=2))
+    print(json.dumps(res, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

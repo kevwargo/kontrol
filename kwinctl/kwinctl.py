@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import signal
-import sys
 from argparse import ArgumentParser
 from collections import defaultdict
 from dataclasses import dataclass
@@ -23,16 +22,17 @@ SCRIPT_UNIQUE_NAME = "kwinctl"
 
 
 class Environment:
-    USER_DIR = Path("~/.local/share/kwinctl").expanduser()
-    GLOBAL_DIR = Path("/usr/share/kwinctl")
-
     def __init__(self):
-        self.interactive = all(f.isatty() for f in (sys.stdin, sys.stdout, sys.stderr))
+        self.sysdir = Path("/usr/share/kwinctl")
+        self.userdir = Path("~/.local/share/kwinctl").expanduser()
+        self.localdir = Path(__file__).parent
+
+        self.parse_args()
 
         logfmt = (
-            "[%(levelname)s] %(asctime)s %(message)s"
-            if self.interactive
-            else "[%(levelname)s] %(message)s"
+            "[%(levelname)s] %(message)s"
+            if self.args.service
+            else "[%(levelname)s] %(asctime)s %(message)s"
         )
 
         handler = logging.StreamHandler()
@@ -42,39 +42,74 @@ class Environment:
         self.log.setLevel(logging.DEBUG)
         self.log.addHandler(handler)
 
-    def read_cfg_file(self, base_name: str, only_global=False) -> str:
+    def parse_args(self):
+        parser = ArgumentParser()
+        parser.add_argument("--service", action="store_true", help="Run as a systemd service")
+        parser.add_argument(
+            "-O",
+            "--sync-overrides",
+            action="store_true",
+            help="Sync the current state of global shortcuts into overrides.yaml",
+        )
+        parser.add_argument("-X", "--reset-overrides", action="store_true")
+        parser.add_argument(
+            "-c",
+            "--components",
+            action="append",
+            help="Instead of non-default, sync shortcuts from these components",
+        )
+        self.args = parser.parse_args()
+
+    def read_raw(self, filename: str) -> str:
+        return ((self.sysdir if self.args.service else self.localdir) / filename).read_text()
+
+    def read_cfg(self, filename: str) -> dict:
+        if not self.args.service:
+            return self._read_yaml(self.localdir / filename)
+
         try:
-            if self.interactive:
-                return (Path(__file__).parent / base_name).read_text()
-
-            global_path = self.GLOBAL_DIR / base_name
-            if only_global:
-                return global_path.read_text()
-
-            if not (user_path := self.USER_DIR / base_name).exists():
-                self.log.info(f"Initializing {user_path} from default {global_path}...")
-                user_path.parent.mkdir(parents=True, exist_ok=True)
-                user_path.write_bytes(global_path.read_bytes())
-
-            return user_path.read_text()
+            cfg = self._read_yaml(self.sysdir / filename)
         except FileNotFoundError:
-            return ""
+            cfg = {}
 
-    def write_cfg_file(self, base_name: str, data: str):
-        if self.interactive:
-            (Path(__file__).parent / base_name).write_text(data)
+        try:
+            cfg.update(self._read_yaml(self.userdir / filename))
+        except FileNotFoundError:
+            pass
+
+        # trimming empty values to allow user config disable settings
+        # defined in system config
+
+        merged_cfg = {}
+        for k, v in cfg.items():
+            if v is None:
+                self.log.debug(f"Removing disabled {k} from {filename}")
+            else:
+                self.log.debug(f"Setting {filename}:{k} = {v}")
+                merged_cfg[k] = v
+
+        return merged_cfg
+
+    def write_cfg(self, filename: str, cfg: dict):
+        if self.args.service:
+            path = self.userdir / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
         else:
-            user_path = self.USER_DIR / base_name
-            user_path.parent.mkdir(parents=True, exist_ok=True)
-            user_path.write_text(data)
+            path = self.localdir / filename
+
+        path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+
+    @staticmethod
+    def _read_yaml(path: Path) -> dict:
+        return yaml.safe_load(path.read_text())
 
 
 class KWinCtl(ServiceInterface):
     NAME = "org.kevwargo.kwinctl"
 
-    def __init__(self):
+    def __init__(self, env: Environment):
         super().__init__(self.NAME)
-        self.env = Environment()
+        self.env = env
         self.bus: Bus | None = None
         self.main_script = None
         self.remaps: list[ShortcutInfo] = []
@@ -191,7 +226,7 @@ class KWinCtl(ServiceInterface):
             }.items():
                 print(f"const {name} = {json.dumps(value, default=json_default)};", file=f)
 
-            f.write(self.env.read_cfg_file("kwinctl.js", True))
+            f.write(self.env.read_raw("kwinctl.js"))
             f.flush()
 
             await self._cleanup_kglobalaccel()
@@ -433,7 +468,8 @@ class HotkeysConfig:
         self._load_overrides()
 
         if errors := [
-            f"Key {k} is used multiple times: " + json.dumps(items, indent=2, default=json_default)
+            f"Key {k} is used multiple times: "
+            + json.dumps(items, indent=2, default=json_default, ensure_ascii=False)
             for k, items in self.bindings.items()
             if len(items) > 1
         ]:
@@ -442,10 +478,7 @@ class HotkeysConfig:
         self.bindings = {k: i[0] for k, i in self.bindings.items()}
 
     def _load_rules(self):
-        self.rules = [
-            {"id": k} | r
-            for k, r in (yaml.safe_load(self.env.read_cfg_file("rules.yaml")) or {}).items()
-        ]
+        self.rules = [{"id": k} | r for k, r in self.env.read_cfg("rules.yaml").items()]
         for rule in self.rules:
             rule["key"] = validate_key(rule.get("key"), f"Rule {rule}")
             if not (rule.get("cls") or rule.get("caption")):
@@ -453,7 +486,7 @@ class HotkeysConfig:
             self.bindings[rule["key"]].append({"type": "rule"} | rule)
 
     def _load_commands(self):
-        self.commands = yaml.safe_load(self.env.read_cfg_file("commands.yaml")) or {}
+        self.commands = self.env.read_cfg("commands.yaml")
 
         for cmd in [{"id": k} | c for k, c in self.commands.items()]:
             cmd["key"] = validate_key(cmd.get("key"), f"Command {cmd}")
@@ -466,9 +499,8 @@ class HotkeysConfig:
     def _load_overrides(self):
         self.overrides: dict[tuple[str, str], dict] = {}
 
-        overrides = yaml.safe_load(self.env.read_cfg_file("overrides.yaml")) or {}
-
-        for comp_id, actions in overrides.items():
+        cfg = self.env.read_cfg("overrides.yaml")
+        for comp_id, actions in cfg.items():
             for act_id, action in actions.items():
                 override = {"component_id": comp_id, "action_id": act_id} | action
                 action["keys"] = [
@@ -494,10 +526,9 @@ def json_default(x) -> str:
 
 
 class OverridesManager:
-    def __init__(self, args):
+    def __init__(self, env: Environment):
         self.bus: Bus | None = None
-        self.args = args
-        self.env = Environment()
+        self.env = env
 
     async def sync(self):
         self.bus = await Bus().connect()
@@ -544,26 +575,11 @@ class OverridesManager:
 
 
 async def main():
-    parser = ArgumentParser()
-    parser.add_argument(
-        "-O",
-        "--sync-overrides",
-        action="store_true",
-        help="Sync the current state of global shortcuts into overrides.yaml",
-    )
-    parser.add_argument("-X", "--reset-overrides", action="store_true")
-    parser.add_argument(
-        "-c",
-        "--components",
-        action="append",
-        help="Instead of non-default, sync shortcuts from these components",
-    )
-    args = parser.parse_args()
-
-    if args.sync_overrides:
-        await OverridesManager(args).sync()
+    env = Environment()
+    if env.args.sync_overrides:
+        await OverridesManager(env).sync()
     else:
-        await KWinCtl().run()
+        await KWinCtl(env).run()
 
 
 if __name__ == "__main__":

@@ -68,7 +68,7 @@ function matchRule(rule, window) {
   if (rule.cls && rule.cls !== window.resourceClass) return false;
   if (rule.caption && rule.caption !== window.caption) return false;
 
-  print(`kwinctl matcher: ${wfmt(window)} matched by ${JSON.stringify(rule)}`);
+  print(`kwinctl matcher: ${wfmt(window)} matched by ${rule}`);
 
   return true;
 }

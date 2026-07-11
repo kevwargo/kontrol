@@ -4,7 +4,7 @@ After=plasma-workspace.target
 BindsTo=plasma-workspace.target
 
 [Service]
-ExecStart=/usr/bin/kwinctl
+ExecStart=/usr/bin/kwinctl --service
 KillMode=process
 
 [Install]
