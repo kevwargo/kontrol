@@ -1,3 +1,7 @@
+## Rules
+
+1. match multiple classes (or regexp) in a single rule
+
 ## Snippets: strip whitespace
 
 ```
