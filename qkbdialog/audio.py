@@ -4,9 +4,9 @@ import asyncio
 import json
 import logging
 import re
-import signal
 import sys
 from functools import cached_property
+from signal import SIGINT
 from subprocess import PIPE
 
 from dbus_next import BusType
@@ -15,7 +15,7 @@ from PyQt6.QtCore import QProcess, Qt, QTimer
 from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 from qasync import QEventLoop
 
-logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(asctime)s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(message)s")
 log = logging.info
 
 
@@ -132,7 +132,7 @@ class MenuDialog(QWidget):
         self.done_event = asyncio.Event()
 
     async def run(self):
-        asyncio.get_running_loop().add_signal_handler(signal.SIGINT, self.on_exit)
+        asyncio.get_running_loop().add_signal_handler(SIGINT, self.on_exit)
         self.start_watcher()
 
         await self.update_sinks()
