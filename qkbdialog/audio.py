@@ -119,7 +119,7 @@ class BTManager:
     def iface_removed(self, path: str, obj_ifaces):
         self._ifaces[path].difference_update(obj_ifaces)
         if new := self._ifaces[path]:
-            log(f"dbus: some interfaces removed: {path}({sorted(obj_ifaces)}): {sorted(new)}")
+            log(f"dbus removed: {path} - {sorted(obj_ifaces)} = {sorted(new)}")
         else:
             log(f"dbus removed completely: {path}")
             del self._ifaces[path]
@@ -309,6 +309,8 @@ class AudioOutput(QWidget):
 
 
 class MenuDialog(QWidget):
+    KEY_QUIT = "Q"
+    KEY_ENABLE_BT = "B"
 
     def __init__(self, app: QApplication):
         super().__init__()
@@ -317,9 +319,18 @@ class MenuDialog(QWidget):
         self.setWindowTitle("Choose audio output")
         self.setWindowFlag(Qt.WindowType.Dialog)
 
+        self.button_group = QButtonGroup(self)
+        self.audio_outputs: list[AudioOutput] = []
+        self.keymap = Keymap(self)
+
+        self.sink_mgr = SinkManager(self)
+        self.sysbus: MessageBus | None = None
+        self.bt_mgr: BTManager | None = None
+
         self.top_layout = QVBoxLayout(self)
-        self.bt_activate_button = QPushButton("Enable BT", self)
+        self.bt_activate_button = QPushButton(f"Enable BT ({self.KEY_ENABLE_BT})", self)
         self.bt_activate_button.clicked.connect(log_exceptions(self.activate_bt))
+        self.show_bt_button()
         self.top_layout.addWidget(self.bt_activate_button)
         self.loader = QProgressBar(self)
         self.loader.setRange(0, 0)
@@ -328,14 +339,6 @@ class MenuDialog(QWidget):
 
         self.grid = QGridLayout()
         self.top_layout.addLayout(self.grid)
-
-        self.button_group = QButtonGroup(self)
-        self.audio_outputs: list[AudioOutput] = []
-        self.keymap = Keymap(self)
-
-        self.sink_mgr = SinkManager(self)
-        self.sysbus: MessageBus | None = None
-        self.bt_mgr: BTManager | None = None
 
         self.done_event = asyncio.Event()
 
@@ -352,7 +355,7 @@ class MenuDialog(QWidget):
             self.bt_mgr.on_adapter_state_change = self.on_bt_state_change
             await self.bt_mgr.start()
 
-            self.keymap.bind(self.done_event.set, "Q", force=True)
+            self.keymap.bind(self.done_event.set, self.KEY_QUIT, force=True)
 
             self.show()
 
@@ -400,18 +403,33 @@ class MenuDialog(QWidget):
     def on_bt_state_change(self, enabled: bool):
         if enabled:
             self.loader.hide()
-            self.bt_activate_button.hide()
+            self.hide_bt_button()
         elif any(o.bt_dev for o in self.audio_outputs):
             log("BT adapter disabled, but devices present")
-            self.bt_activate_button.hide()
+            self.hide_bt_button()
         else:
             log("BT adapter disabled")
-            self.bt_activate_button.show()
+            self.show_bt_button()
 
     def activate_bt(self, checked=False):
         self.bt_mgr.activate_adapter()
-        self.bt_activate_button.hide()
+        self.hide_bt_button()
         self.loader.show()
+
+    def show_bt_button(self):
+        self.bt_activate_button.show()
+        for o in self.audio_outputs:
+            if o.key == self.KEY_ENABLE_BT:
+                self.keymap.unbind(self.KEY_ENABLE_BT)
+                key = self.keymap.bind_available(o.button.animateClick)
+                o.set_key(key)
+                break
+
+        self.keymap.bind(self.bt_activate_button.animateClick, self.KEY_ENABLE_BT)
+
+    def hide_bt_button(self):
+        self.bt_activate_button.hide()
+        self.keymap.unbind(self.KEY_ENABLE_BT)
 
     def _update_ui(self):
         self.audio_outputs.sort()
