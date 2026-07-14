@@ -14,7 +14,8 @@ from subprocess import run as run_cmd
 
 from dbus_next import BusType
 from dbus_next.aio import MessageBus
-from PyQt6.QtCore import QObject, QProcess, Qt, QTimer
+from dbus_next.errors import DBusError
+from PyQt6.QtCore import QObject, QProcess, Qt, QTimer, pyqtBoundSignal
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QApplication, QButtonGroup, QGridLayout, QLabel,
                              QProgressBar, QPushButton, QRadioButton,
@@ -25,15 +26,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(message)s")
 log = logging.info
 
 
-def log_exceptions(fn: Callable) -> Callable:
-    @wraps(fn)
+def connect(sig: pyqtBoundSignal, slot: Callable):
+    @wraps(slot)
     def wrapped(*args, **kwargs):
         try:
-            return fn(*args, **kwargs)
+            return slot(*args, **kwargs)
         except Exception as e:
             logging.exception(f"{type(e).__name__}({e})")
 
-    return wrapped
+    sig.connect(wrapped)
 
 
 class Sink:
@@ -70,18 +71,22 @@ class BTDevice:
 
 
 class BTManager:
+    BUS_NAME = "org.bluez"
+    DEVICE_IFACE = "org.bluez.Device1"
+    ADAPTER_IFACE = "org.bluez.Adapter1"
+
     def __init__(self, bus: MessageBus):
         self.bus = bus
 
-        self._event = asyncio.Event()
         self._ifaces: dict[str, set] = defaultdict(set)
 
-        # TODO: adapt for multiple adapters
+        # TODO: adapt for multiple adapters (xD)
         self._adapter_path: str | None = None
+        self._adapter_ready = asyncio.Event()
 
     async def start(self):
-        root_intro = await self.bus.introspect("org.bluez", "/")
-        manager = self.bus.get_proxy_object("org.bluez", "/", root_intro).get_interface(
+        root_intro = await self.bus.introspect(self.BUS_NAME, "/")
+        manager = self.bus.get_proxy_object(self.BUS_NAME, "/", root_intro).get_interface(
             "org.freedesktop.DBus.ObjectManager"
         )
         manager.on_interfaces_added(self.iface_added)
@@ -89,10 +94,7 @@ class BTManager:
 
         objects = await manager.call_get_managed_objects()
         for path, obj_ifaces in objects.items():
-            if dev := obj_ifaces.get("org.bluez.Device1"):
-                self.notify_new_device(path, dev)
-            elif adapter := obj_ifaces.get("org.bluez.Adapter1"):
-                self.notify_adapter(path, adapter)
+            self.iface_added(path, obj_ifaces)
 
     def notify_new_device(self, path: str, dev: dict):
         name = None
@@ -103,15 +105,18 @@ class BTManager:
 
     def notify_adapter(self, path, adapter):
         log(f"New adapter at {path}: {adapter['Address']}")
+
         self._adapter_path = path
+        self._adapter_ready.set()
         self.on_adapter_state_change(True)
 
     def iface_added(self, path: str, obj_ifaces: dict):
         log(f"dbus added: {path}({sorted(obj_ifaces)})")
-        if dev := obj_ifaces.get("org.bluez.Device1"):
+
+        if dev := obj_ifaces.get(self.DEVICE_IFACE):
             if path not in self._ifaces:
                 self.notify_new_device(path, dev)
-        elif adapter := obj_ifaces.get("org.bluez.Adapter1"):
+        elif adapter := obj_ifaces.get(self.ADAPTER_IFACE):
             self.notify_adapter(path, adapter)
 
         self._ifaces[path].update(obj_ifaces)
@@ -124,10 +129,24 @@ class BTManager:
             log(f"dbus removed completely: {path}")
             del self._ifaces[path]
             if path == self._adapter_path:
+                self._adapter_ready.clear()
                 self.on_adapter_state_change(False)
 
     def activate_adapter(self):
         run_cmd(["rfkill", "unblock", "bluetooth"], check=True)
+
+    async def connect_device(self, dev: BTDevice):
+        log("Waiting for BT adapter ...")
+        self.activate_adapter()
+        await self._adapter_ready.wait()
+        log("BT adapter ready")
+
+        intro = await self.bus.introspect(self.BUS_NAME, dev.id)
+        iface = self.bus.get_proxy_object(self.BUS_NAME, dev.id, intro).get_interface(
+            self.DEVICE_IFACE
+        )
+        log(f"Calling {dev}.{iface.call_connect} ...")
+        await iface.call_connect()
 
     def on_new_device(self, dev: BTDevice): ...
     def on_adapter_state_change(self, state: bool): ...
@@ -142,12 +161,12 @@ class SinkManager(QObject):
         self.watcher = QProcess(self)
         self.watcher.setProgram("pactl")
         self.watcher.setArguments(["subscribe"])
-        self.watcher.readyReadStandardOutput.connect(log_exceptions(self._on_pactl_event))
+        connect(self.watcher.readyReadStandardOutput, self._on_pactl_event)
 
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(50)
-        self.timer.timeout.connect(log_exceptions(self._update_sinks))
+        connect(self.timer.timeout, self._update_sinks)
 
         self._last_sinks: dict[str, Sink] = {}
         self._last_default: str | None = None
@@ -238,7 +257,7 @@ class Keymap:
         s = self._shortcuts[key] = QShortcut(QKeySequence(key), self._parent)
         log(f"Binding {key!r} to {action}: {s}")
         s.setContext(Qt.ShortcutContext.WindowShortcut)
-        s.activated.connect(log_exceptions(action))
+        connect(s.activated, action)
 
 
 class AudioOutput(QWidget):
@@ -327,18 +346,25 @@ class MenuDialog(QWidget):
         self.sysbus: MessageBus | None = None
         self.bt_mgr: BTManager | None = None
 
+        self._output_activation_task: asyncio.Task | None = None
+        self._esc_shortcut = QShortcut(QKeySequence("ESC"), self)
+        self._esc_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        self._esc_shortcut.setEnabled(False)
+        connect(self._esc_shortcut.activated, self._cancel_output_activation_request)
+
         self.top_layout = QVBoxLayout(self)
         self.bt_activate_button = QPushButton(f"Enable BT ({self.KEY_ENABLE_BT})", self)
-        self.bt_activate_button.clicked.connect(log_exceptions(self.activate_bt))
+        connect(self.bt_activate_button.clicked, self.activate_bt)
         self.show_bt_button()
-        self.top_layout.addWidget(self.bt_activate_button)
         self.loader = QProgressBar(self)
         self.loader.setRange(0, 0)
         self.loader.hide()
-        self.top_layout.addWidget(self.loader)
 
         self.grid = QGridLayout()
+
         self.top_layout.addLayout(self.grid)
+        self.top_layout.addWidget(self.bt_activate_button)
+        self.top_layout.addWidget(self.loader)
 
         self.done_event = asyncio.Event()
 
@@ -364,6 +390,8 @@ class MenuDialog(QWidget):
             log("Cleanup...")
 
             self.sink_mgr.stop()
+
+            self._cancel_output_activation_request()
 
             if self.sysbus:
                 self.sysbus.disconnect()
@@ -395,6 +423,7 @@ class MenuDialog(QWidget):
         for o in self.audio_outputs:
             if o.match_bt(bt_dev):
                 o.bt_dev = bt_dev
+                log(f"Assigned bt_dev to {o}")
                 return
 
         self._add_output(bt_dev=bt_dev)
@@ -402,7 +431,7 @@ class MenuDialog(QWidget):
 
     def on_bt_state_change(self, enabled: bool):
         if enabled:
-            self.loader.hide()
+            self._disable_loader()
             self.hide_bt_button()
         elif any(o.bt_dev for o in self.audio_outputs):
             log("BT adapter disabled, but devices present")
@@ -414,14 +443,14 @@ class MenuDialog(QWidget):
     def activate_bt(self, checked=False):
         self.bt_mgr.activate_adapter()
         self.hide_bt_button()
-        self.loader.show()
+        self._enable_loader()
 
     def show_bt_button(self):
         self.bt_activate_button.show()
         for o in self.audio_outputs:
             if o.key == self.KEY_ENABLE_BT:
                 self.keymap.unbind(self.KEY_ENABLE_BT)
-                key = self.keymap.bind_available(o.button.animateClick)
+                key = self._bind_output(o)
                 o.set_key(key)
                 break
 
@@ -441,7 +470,7 @@ class MenuDialog(QWidget):
             self.grid.takeAt(0)
 
         for row, o in enumerate(self.audio_outputs):
-            key = self.keymap.bind_available(o.button.animateClick)
+            key = self._bind_output(o)
             o.set_key(key)
             o.add_to_grid(self.grid, row)
 
@@ -449,24 +478,57 @@ class MenuDialog(QWidget):
 
     def _add_output(self, *, sink: Sink | None = None, bt_dev: BTDevice | None = None):
         o = AudioOutput(self, sink=sink, bt_dev=bt_dev)
-        o.button.clicked.connect(
-            log_exceptions(lambda checked=False: self._on_output_clicked(o, checked))
-        )
 
         self.button_group.addButton(o.button)
         self.audio_outputs.append(o)
 
         log(f"Added to UI: {o}")
 
-    def _on_output_clicked(self, o: AudioOutput, checked: bool):
-        log(f"{'Checked' if checked else 'Unchecked'} {o}")
-        if o.sink:
-            run_cmd(["pactl", "set-default-sink", o.sink.name], check=True)
-        else:
-            log(f"{o} does not have a sink")
+    def _bind_output(self, o: AudioOutput) -> str:
+        return self.keymap.bind_available(lambda: self._request_activate_output(o))
 
-    def _enable_outputs(self):
-        log("Enabling outputs")
+    def _request_activate_output(self, o: AudioOutput):
+        self._cancel_output_activation_request()
+        self._output_activation_task = asyncio.create_task(self._activate_output(o))
+
+    def _cancel_output_activation_request(self):
+        if self._output_activation_task:
+            log(f"Cancelling {self._output_activation_task}")
+            self._output_activation_task.cancel()
+            self._output_activation_task = None
+        else:
+            log("Skipping task cancellation")
+
+    async def _activate_output(self, o: AudioOutput):
+        self._enable_loader()
+        self._esc_shortcut.setEnabled(True)
+        try:
+            if o.sink:
+                p = await asyncio.create_subprocess_exec(
+                    "pactl", ["set-default-sink", o.sink.name]
+                )
+                await p.wait()
+            elif o.bt_dev:
+                log(f"{o} does not have a sink, trying to connect BT device ...")
+                await self.bt_mgr.connect_device(o.bt_dev)
+        except asyncio.CancelledError:
+            log(f"Cancelled {o} activation")
+            raise
+        except DBusError as e:
+            log(f"Couldn't connect to {o.bt_dev}: {e.args} {e.reply!r} {e.text!r} {e.type}")
+        finally:
+            self._esc_shortcut.setEnabled(False)
+            self._disable_loader()
+
+    def _enable_loader(self):
+        log("Enabling loader")
+        self.loader.show()
+        for o in self.audio_outputs:
+            o.button.setDisabled(True)
+
+    def _disable_loader(self):
+        log("Disabling loader")
+        self.loader.hide()
         for o in self.audio_outputs:
             o.button.setDisabled(False)
 
@@ -474,6 +536,7 @@ class MenuDialog(QWidget):
         for o in self.audio_outputs:
             if o.match_sink(sink):
                 o.sink = sink
+                log(f"Assigned sink to {o}")
                 return True
 
         return False
