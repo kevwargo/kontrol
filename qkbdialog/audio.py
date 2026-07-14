@@ -271,12 +271,12 @@ class AudioOutput(QWidget):
 
         super().__init__(parent)
 
-        self.sink = sink
-        self.bt_dev = bt_dev
+        self._sink = sink
+        self._bt_dev = bt_dev
         self.key: str | None = None
 
-        self.button = QRadioButton(self._name, self)
-        self._label = QLabel(self)
+        self.button = QRadioButton(self.label, self)
+        self._shortcut_label = QLabel(self)
 
     def match_sink(self, sink: Sink) -> bool:
         if self.sink:
@@ -297,34 +297,60 @@ class AudioOutput(QWidget):
         return False
 
     def add_to_grid(self, grid: QGridLayout, row: int):
-        grid.addWidget(self._label, row, 0)
+        grid.addWidget(self._shortcut_label, row, 0)
         grid.addWidget(self.button, row, 1)
 
     def set_key(self, key: str):
         self.key = key
-        self._label.setText(f"[{key}]")
+        self._shortcut_label.setText(f"[{key}]")
 
-    @cached_property
-    def _name(self) -> str:
+    @property
+    def label(self) -> str:
         if self.bt_dev:
             return self.bt_dev.name
 
         return self.sink.description
 
+    @property
+    def sink(self) -> Sink | None:
+        return self._sink
+
+    @sink.setter
+    def sink(self, new_sink: Sink | None):
+        if new_sink:
+            log(f"Assigning new sink {new_sink} to {self}")
+        else:
+            log(f"Removing sink from {self}")
+
+        self._sink = new_sink
+
+    @property
+    def bt_dev(self) -> BTDevice | None:
+        return self._bt_dev
+
+    @bt_dev.setter
+    def bt_dev(self, new_bt_dev: BTDevice | None):
+        if new_bt_dev:
+            log(f"Assigning new bt_dev {new_bt_dev} to {self}")
+        else:
+            log(f"Removing bt_dev from {self}")
+
+        self._bt_dev = new_bt_dev
+
     def __str__(self):
-        return f"AudioOutput<sink={self.sink} bt_dev={self.bt_dev}>"
+        return f"AudioOutput<sink={self._sink} bt_dev={self._bt_dev}>"
 
     def __repr__(self):
         return str(self)
 
-    def __lt__(self, o):
-        if not isinstance(o, type(self)):
+    def __lt__(self, o: AudioOutput):
+        if not isinstance(o, AudioOutput):
             return NotImplemented
 
-        if (self_bt := bool(self.bt_dev)) != (o_bt := bool(o.bt_dev)):
+        if (self_bt := bool(self._bt_dev)) != (o_bt := bool(o._bt_dev)):
             return self_bt < o_bt
 
-        return self._name < o._name
+        return self.label < o.label
 
 
 class MenuDialog(QWidget):
@@ -401,7 +427,6 @@ class MenuDialog(QWidget):
         for o in list(self.audio_outputs):
             if o.sink and o.sink.name in removed:
                 if o.bt_dev:
-                    log(f"Removing sink from {o}")
                     o.sink = None
                 else:
                     self.keymap.unbind(o.key)
@@ -423,7 +448,6 @@ class MenuDialog(QWidget):
         for o in self.audio_outputs:
             if o.match_bt(bt_dev):
                 o.bt_dev = bt_dev
-                log(f"Assigned bt_dev to {o}")
                 return
 
         self._add_output(bt_dev=bt_dev)
@@ -536,7 +560,6 @@ class MenuDialog(QWidget):
         for o in self.audio_outputs:
             if o.match_sink(sink):
                 o.sink = sink
-                log(f"Assigned sink to {o}")
                 return True
 
         return False
