@@ -1,0 +1,2 @@
+- **fix**: BT devices don't switch to `[OFF]` in UI
+- make loader last longer when connecting to a device with bt disabled (currently loader disappers quicker than needed - when adapter activates, while it should wait until the device in question appears)

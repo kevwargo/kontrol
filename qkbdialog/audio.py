@@ -119,7 +119,6 @@ class QDataclass:
 
         @wraps(orig)
         def wrapped(self, *args, **kwargs):
-            # props = {f"_{p}": kwargs.pop(p, default) for p, default in prop_defaults.items()}
             for p, v in prop_defaults.items():
                 setattr(self, f"_{p}", kwargs.pop(p, v))
 
