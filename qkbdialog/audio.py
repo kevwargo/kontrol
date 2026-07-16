@@ -10,9 +10,9 @@ from collections import defaultdict
 from collections.abc import Callable
 from functools import cached_property, wraps
 from signal import SIGINT
-from subprocess import PIPE, Popen
+from subprocess import PIPE, CalledProcessError, Popen
 from subprocess import run as run_cmd
-from typing import get_type_hints
+from typing import Iterator, get_type_hints
 
 from dbus_next import BusType
 from dbus_next.aio import MessageBus
@@ -40,6 +40,15 @@ def connect(sig: pyqtBoundSignal, slot: Callable):
             logging.exception(f"{type(e).__name__}({e})")
 
     sig.connect(wrapped)
+
+
+def multi_command(*commands: list[list[str]]) -> Iterator[bytes]:
+    for p in [Popen(cmd, stdout=PIPE, stderr=PIPE) for cmd in commands]:
+        out, err = p.communicate()
+        if p.returncode:
+            raise CalledProcessError(p.returncode, p.args, output=out, stderr=err)
+
+        yield out
 
 
 class Sink:
@@ -320,16 +329,9 @@ class SinkManager(QObject):
                 self.timer.start()
 
     def _update_sinks(self):
-        proc_sinks = Popen(["pactl", "--format=json", "list", "sinks"], stdout=PIPE, stderr=PIPE)
-        proc_defsink = Popen(["pactl", "get-default-sink"], stdout=PIPE, stderr=PIPE)
-
-        sinks_buf, sinks_err = proc_sinks.communicate()
-        if proc_sinks.returncode != 0:
-            raise RuntimeError(f"{proc_sinks}: {sinks_err}")
-        defsink_buf, defsink_err = proc_defsink.communicate()
-        if proc_defsink.returncode != 0:
-            raise RuntimeError(f"{proc_defsink}: {defsink_err}")
-
+        sinks_buf, defsink_buf = multi_command(
+            ["pactl", "--format=json", "list", "sinks"], ["pactl", "get-default-sink"]
+        )
         available_sinks = {s.name: s for s in map(Sink, json.loads(sinks_buf)) if s.available}
         default_sink = defsink_buf.decode().rstrip("\n")
 
