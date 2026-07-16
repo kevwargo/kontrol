@@ -418,9 +418,14 @@ class AudioOutput(QWidget, QDataclass):
                 f"At least one of `sink` or `bt_dev` must be specified for {type(self).__name__}"
             )
 
+        # FIXME: these widgets are reparented to MenuDialog after they are added to the grid
+        # Either AudioOutput should have its own QHBoxLayout or it shouldn't be a QWidget at all
+        # and button and label should be children of MenuDialog directly, then the grid layout
+        # will make sense.
         self._shortcut_label = QLabel(self)
         self._shortcut_label.hide()
         self.button = QRadioButton(self._label, self)
+
         if self.bt_dev:
             connect(self.bt_dev.props_changed, self._update_label)
             logging.info(f"Connected initial bt_dev.props_changed to {self}._update_label")
@@ -710,3 +715,7 @@ class MenuDialog(QWidget):
         logging.debug(f"CloseEvent: {ev}")
         ev.accept()
         self._done.set()
+
+
+if __name__ == "__main__":
+    main()
