@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import asyncio
 import json
 import sys
@@ -9,7 +7,11 @@ from dbus_next.aio import MessageBus
 from PyQt6.QtGui import QKeySequence
 
 
-async def main(key: str):
+def main(key: str):
+    asyncio.run(_main(sys.argv[1]))
+
+
+async def _main(key: str):
     qk = QKeySequence(key)
     if not qk.toString():
         raise ValueError(f"invalid key {key}")
@@ -21,7 +23,3 @@ async def main(key: str):
     )
     res = await iface.call_global_shortcuts_by_key([[qk[0].toCombined(), 0, 0, 0]], [0])
     print(json.dumps(res, indent=2, ensure_ascii=False))
-
-
-if __name__ == "__main__":
-    asyncio.run(main(sys.argv[1]))

@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import asyncio
 import json
 import sys
@@ -23,6 +21,10 @@ try {
   value = `${e}`;
 }
 """
+
+
+def main():
+    asyncio.run(Eval().main())
 
 
 class Eval(ServiceInterface):
@@ -86,7 +88,3 @@ class Eval(ServiceInterface):
 
         print(value)
         self._stop_event.set()
-
-
-if __name__ == "__main__":
-    asyncio.run(Eval().main())

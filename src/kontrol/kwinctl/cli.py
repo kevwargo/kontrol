@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import asyncio
 import json
 import logging
@@ -19,6 +17,11 @@ from dbus_next.service import ServiceInterface, method
 from PyQt6.QtGui import QKeySequence
 
 SCRIPT_UNIQUE_NAME = "kwinctl"
+
+
+def main():
+    env = Environment()
+    asyncio.run(OverridesManager(env).sync() if env.args.sync_overrides else KWinCtl(env).run())
 
 
 class Environment:
@@ -574,13 +577,5 @@ class OverridesManager:
         return all_shortcuts
 
 
-async def main():
-    env = Environment()
-    if env.args.sync_overrides:
-        await OverridesManager(env).sync()
-    else:
-        await KWinCtl(env).run()
-
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

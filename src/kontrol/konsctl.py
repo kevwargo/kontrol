@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import asyncio
 import sys
 from functools import cached_property
@@ -10,8 +8,8 @@ from dbus_next import BusType, DBusError, Message
 from dbus_next.aio import MessageBus, ProxyInterface
 
 
-async def main():
-    await KonsoleService().run(sys.argv[1], sys.argv[2:])
+def main():
+    asyncio.run(KonsoleService().run(sys.argv[1], sys.argv[2:]))
 
 
 class Bus(MessageBus):
@@ -86,7 +84,9 @@ class KonsoleService:
 
         return [Window(self._bus, self._active_service, w) for w in window_ifaces]
 
-    async def _get_sub_ifaces(self, base_path: str, iface_name: str) -> list[ProxyInterface] | None:
+    async def _get_sub_ifaces(
+        self, base_path: str, iface_name: str
+    ) -> list[ProxyInterface] | None:
         base_intro = None
 
         try:
@@ -114,7 +114,11 @@ class KonsoleService:
 
         ifaces = []
         for n in base_intro.nodes:
-            ifaces.append(await self._bus.get_proxy_iface(self._active_service, f"{base_path}/{n.name}", iface_name))
+            ifaces.append(
+                await self._bus.get_proxy_iface(
+                    self._active_service, f"{base_path}/{n.name}", iface_name
+                )
+            )
 
         return ifaces
 
@@ -164,7 +168,9 @@ class Session:
         self.id = int(sess_id)
 
     async def resolve(self) -> Session:
-        self._iface = await self._bus.get_proxy_iface(self._service, f"/Sessions/{self.id}", "org.kde.konsole.Session")
+        self._iface = await self._bus.get_proxy_iface(
+            self._service, f"/Sessions/{self.id}", "org.kde.konsole.Session"
+        )
 
         self.fpid = await self._iface.call_foreground_process_id()
         self.pid = await self._iface.call_process_id()
@@ -179,7 +185,3 @@ class Session:
 
     async def send_text(self, text: str):
         await self._iface.call_send_text(text)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
