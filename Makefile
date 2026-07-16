@@ -1,4 +1,18 @@
-.PHONY: build-pacman install-pacman install
+ENV_MK := env.mk
+GEN_ENV_MK := ./scripts/gen-env-mk.py
+
+-include env.mk
+
+RPMTOP := $(CURDIR)/rpm
+RPM_SOURCE := $(NAME)-$(VERSION).tar.zst
+RPMBUILD_DEFINES := --define "_topdir $(RPMTOP)" \
+	--define "kontrol_name $(NAME)" \
+	--define "kontrol_version $(VERSION)" \
+	--define "kontrol_description $(DESCRIPTION)" \
+	--define "kontrol_src $(RPM_SOURCE)" \
+	--define "qasync_whl $(QASYNC_WHEEL_FILENAME)"
+
+.PHONY: build-pacman install-pacman install build-rpm prepare-rpm-source install-rpmdeps
 
 build-pacman:
 	tar -caf pacman/kontrol_src.tar.zst --exclude-vcs --exclude-vcs-ignores --exclude pacman .
@@ -7,15 +21,24 @@ build-pacman:
 install-pacman:
 	makepkg --dir pacman --install --noconfirm
 
-install:
-	install  -Dm755  kwinctl/kwinctl.py         /usr/bin/kwinctl
-	install  -Dm755  kwinctl/kwinjs-inspect.py  /usr/bin/kwinjs-inspect
-	install  -Dm644  kwinctl/kwinctl.service    /usr/lib/systemd/user/kwinctl.service
-	install  -Dm644  kwinctl/kwinctl.js         /usr/share/kwinctl/kwinctl.js
-	install  -Dm644  kwinctl/rules.yaml         /usr/share/kwinctl/rules.yaml
-	install  -Dm644  kwinctl/commands.yaml      /usr/share/kwinctl/commands.yaml
-	install  -Dm644  kwinctl/overrides.yaml     /usr/share/kwinctl/overrides.yaml
-	install  -Dm755  kombi/kombi.py             /usr/bin/kombi
-	install  -Dm755  konsctl/konsctl.py         /usr/bin/konsctl
-	install  -Dm755  kscreen-toggle-laptop.sh   /usr/bin/kscreen-toggle-laptop
-	install  -Dm755  qkbdialog/vox.py           /usr/bin/qkvox
+build-rpm: prepare-rpm-source $(RPMTOP)/SOURCES/$(QASYNC_WHEEL_FILENAME)
+	rpmbuild $(RPMBUILD_DEFINES) --noclean --nodebuginfo -bb $(RPMTOP)/SPEC/kontrol.spec
+
+prepare-rpm-source:
+	mkdir -p $(RPMTOP)/SOURCES
+	tar -caf $(RPMTOP)/SOURCES/$(RPM_SOURCE) \
+		--exclude-vcs --exclude-vcs-ignores \
+		--exclude configs --exclude pacman --exclude rpm \
+		--transform="s|^\.|$(NAME)-$(VERSION)|" .
+
+$(RPMTOP)/SOURCES/$(QASYNC_WHEEL_FILENAME):
+	mkdir -p $(RPMTOP)/SOURCES
+	curl -L $(QASYNC_WHEEL_URL) -o $@
+	printf '%s  %s\n' $(QASYNC_WHEEL_SHA256) $@ | sha256sum --check
+
+install-rpmdeps:
+	-rpmbuild $(RPMBUILD_DEFINES) -br $(RPMTOP)/SPEC/kontrol.spec
+	sudo dnf builddep $(RPMTOP)/SRPMS/$(NAME)-$(VERSION)-*.rpm
+
+env.mk: pyproject.toml uv.lock $(GEN_ENV_MK)
+	$(GEN_ENV_MK) $@

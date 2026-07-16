@@ -1,6 +1,6 @@
 [project]
 name = "kontrol"
-version = "0.5.1"
+version = "0.5.2"
 description = "A set of tools to configure Plasma 6 (Wayland) in a predictable way"
 requires-python = ">=3.13"
 dependencies = [
@@ -15,6 +15,7 @@ kombi = "kontrol.kombi:main"
 konsctl = "kontrol.konsctl:main"
 kwinctl = "kontrol.kwinctl.cli:main"
 kwinjs = "kontrol.kwinctl.kwinjs_eval:main"
+qkvox = "kontrol.qkvox.vox:main"
 
 [build-system]
 requires = ["hatchling"]

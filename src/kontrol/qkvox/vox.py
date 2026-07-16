@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import asyncio
 import json
 import logging
@@ -29,6 +27,14 @@ logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", logging.INFO),
     format="%(asctime)s | [%(levelname)s] %(message)s",
 )
+
+
+def main():
+    app = QApplication(sys.argv)
+    app.setDesktopFileName("qkvox")
+    menu = MenuDialog(app)
+
+    asyncio.run(menu.run(), loop_factory=QEventLoop)
 
 
 def connect(sig: pyqtBoundSignal, slot: Callable):
@@ -696,11 +702,3 @@ class MenuDialog(QWidget):
         logging.debug(f"CloseEvent: {ev}")
         ev.accept()
         self._done.set()
-
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    app.setDesktopFileName("qkvox")
-    menu = MenuDialog(app)
-
-    asyncio.run(menu.run(), loop_factory=QEventLoop)
