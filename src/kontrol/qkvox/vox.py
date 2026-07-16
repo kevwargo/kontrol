@@ -409,30 +409,28 @@ class Keymap:
         connect(s.activated, action)
 
 
-class AudioOutput(QWidget, QDataclass):
+class AudioOutput(QDataclass):
     sink: Sink
     bt_dev: BTDevice
     shortcut: str
 
     def __init__(self, parent: QWidget):
-        super().__init__(parent)
-
         if not (self.sink or self.bt_dev):
             raise ValueError(
                 f"At least one of `sink` or `bt_dev` must be specified for {type(self).__name__}"
             )
 
-        # FIXME: these widgets are reparented to MenuDialog after they are added to the grid
-        # Either AudioOutput should have its own QHBoxLayout or it shouldn't be a QWidget at all
-        # and button and label should be children of MenuDialog directly, then the grid layout
-        # will make sense.
-        self._shortcut_label = QLabel(self)
+        self._shortcut_label = QLabel(parent)
         self._shortcut_label.hide()
-        self.button = QRadioButton(self._label, self)
+        self.button = QRadioButton(self._label, parent)
 
         if self.bt_dev:
             connect(self.bt_dev.props_changed, self._update_label)
             logging.info(f"Connected initial bt_dev.props_changed to {self}._update_label")
+
+    def deleteLater(self):
+        self._shortcut_label.deleteLater()
+        self.button.deleteLater()
 
     def match_sink(self, sink: Sink) -> bool:
         if self.sink:
