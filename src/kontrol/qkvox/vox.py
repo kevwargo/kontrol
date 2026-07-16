@@ -8,9 +8,9 @@ from collections import defaultdict
 from collections.abc import Callable
 from functools import cached_property, wraps
 from signal import SIGINT
-from subprocess import PIPE, Popen
+from subprocess import PIPE, CalledProcessError, Popen
 from subprocess import run as run_cmd
-from typing import get_type_hints
+from typing import Iterator, get_type_hints
 
 from dbus_next import BusType
 from dbus_next.aio import MessageBus
@@ -48,6 +48,15 @@ def connect(sig: pyqtBoundSignal, slot: Callable):
     sig.connect(wrapped)
 
 
+def multi_command(*commands: list[list[str]]) -> Iterator[bytes]:
+    for p in [Popen(cmd, stdout=PIPE, stderr=PIPE) for cmd in commands]:
+        out, err = p.communicate()
+        if p.returncode:
+            raise CalledProcessError(p.returncode, p.args, output=out, stderr=err)
+
+        yield out
+
+
 class Sink:
     def __init__(self, data: dict):
         self._data = data
@@ -68,7 +77,8 @@ class Sink:
         )
 
     def __str__(self):
-        return f"Sink<{self.name}({self.description}) available:{self.available}>"
+        availability = "" if self.available else "not available"
+        return f"Sink<{self.name}({self.description}){availability}>"
 
     __repr__ = __str__
 
@@ -134,7 +144,7 @@ class QDataclass:
                 self._props_changed_timer = QTimer(self)
                 self._props_changed_timer.setInterval(20)
                 self._props_changed_timer.setSingleShot(True)
-                self._props_changed_timer.timeout.connect(self.props_changed.emit)
+                connect(self._props_changed_timer.timeout, self.props_changed.emit)
 
         cls.__init__ = wrapped
 
@@ -216,13 +226,20 @@ class BTManager(AsyncTaskSupervisor):
             "org.freedesktop.DBus.ObjectManager"
         )
         manager.on_interfaces_added(self.as_task(self.iface_added))
-        manager.on_interfaces_removed(self.iface_removed)
+        manager.on_interfaces_removed(self.as_task(self.iface_removed))
 
         objects = await manager.call_get_managed_objects()
         for path, obj_ifaces in objects.items():
             await self.iface_added(path, obj_ifaces)
 
     async def notify_device(self, path: str):
+        dev = self._devices.get(path)
+
+        if dev and not self._ifaces.get(path):
+            logging.info(f"{dev} disappeared")
+            dev.connected = False
+            return
+
         intro = await self.bus.introspect(self.BUS_NAME, path)
         iface = self.bus.get_proxy_object(self.BUS_NAME, path, intro).get_interface(
             self.DEVICE_IFACE
@@ -232,15 +249,13 @@ class BTManager(AsyncTaskSupervisor):
         address = await iface.get_address()
         connected = await iface.get_connected()
 
-        if (dev := self._devices.get(path)) is None:
-            dev = self._devices[path] = BTDevice(
-                id=path, name=name, mac=address, connected=connected
-            )
-            self.on_new_device(dev)
-        else:
+        if dev:
             dev.name = name
             dev.address = address
             dev.connected = connected
+        else:
+            self._devices[path] = BTDevice(id=path, name=name, mac=address, connected=connected)
+            self.on_new_device(self._devices[path])
 
     def notify_adapter(self, path, adapter):
         logging.info(f"New adapter at {path}: {adapter['Address']}")
@@ -258,16 +273,16 @@ class BTManager(AsyncTaskSupervisor):
         elif adapter := new_ifaces.get(self.ADAPTER_IFACE):
             self.notify_adapter(path, adapter)
 
-    def iface_removed(self, path: str, removed_ifaces):
+    async def iface_removed(self, path: str, removed_ifaces):
         self._ifaces[path].difference_update(removed_ifaces)
-        if new := self._ifaces[path]:
-            logging.debug(f"dbus removed: {path} - {sorted(removed_ifaces)} = {sorted(new)}")
-        else:
-            logging.debug(f"dbus removed completely: {path}")
-            del self._ifaces[path]
+
+        if not self._ifaces[path]:
             if path == self._adapter_path:
                 self._adapter_ready.clear()
                 self.on_adapter_state_change(False)
+
+        if path in self._devices:
+            await self.notify_device(path)
 
     def activate_adapter(self):
         run_cmd(["rfkill", "unblock", "bluetooth"], check=True)
@@ -290,7 +305,7 @@ class BTManager(AsyncTaskSupervisor):
 
 
 class SinkManager(QObject):
-    EVENT_REGEX = re.compile(b"^Event '(new|remove|change)' on (card|sink) #[0-9]+")
+    EVENT_REGEX = re.compile(b"^Event '(new|remove|change)' on (card|sink(-input)?) #[0-9]+")
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -326,16 +341,9 @@ class SinkManager(QObject):
                 self.timer.start()
 
     def _update_sinks(self):
-        proc_sinks = Popen(["pactl", "--format=json", "list", "sinks"], stdout=PIPE, stderr=PIPE)
-        proc_defsink = Popen(["pactl", "get-default-sink"], stdout=PIPE, stderr=PIPE)
-
-        sinks_buf, sinks_err = proc_sinks.communicate()
-        if proc_sinks.returncode != 0:
-            raise RuntimeError(f"{proc_sinks}: {sinks_err}")
-        defsink_buf, defsink_err = proc_defsink.communicate()
-        if proc_defsink.returncode != 0:
-            raise RuntimeError(f"{proc_defsink}: {defsink_err}")
-
+        sinks_buf, defsink_buf = multi_command(
+            ["pactl", "--format=json", "list", "sinks"], ["pactl", "get-default-sink"]
+        )
         available_sinks = {s.name: s for s in map(Sink, json.loads(sinks_buf)) if s.available}
         default_sink = defsink_buf.decode().rstrip("\n")
 
