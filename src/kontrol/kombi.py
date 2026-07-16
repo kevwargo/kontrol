@@ -7,7 +7,7 @@ from dbus_next.aio import MessageBus
 from PyQt6.QtGui import QKeySequence
 
 
-def main(key: str):
+def main():
     asyncio.run(_main(sys.argv[1]))
 
 
