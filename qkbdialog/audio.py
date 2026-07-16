@@ -71,7 +71,8 @@ class Sink:
         )
 
     def __str__(self):
-        return f"Sink<{self.name}({self.description}) available:{self.available}>"
+        availability = "" if self.available else "not available"
+        return f"Sink<{self.name}({self.description}){availability}>"
 
     __repr__ = __str__
 
@@ -137,7 +138,7 @@ class QDataclass:
                 self._props_changed_timer = QTimer(self)
                 self._props_changed_timer.setInterval(20)
                 self._props_changed_timer.setSingleShot(True)
-                self._props_changed_timer.timeout.connect(self.props_changed.emit)
+                connect(self._props_changed_timer.timeout, self.props_changed.emit)
 
         cls.__init__ = wrapped
 
