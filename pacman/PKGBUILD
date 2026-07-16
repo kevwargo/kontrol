@@ -1,5 +1,5 @@
 pkgname=kontrol
-pkgver=0.5.0
+pkgver=0.5.1
 pkgrel=1
 pkgdesc="A set of tools to configure Plasma 6 (Wayland) in a predictable way"
 arch=(any)
@@ -22,5 +22,5 @@ package() {
     install  -Dm755   konsctl/konsctl.py         ${pkgdir}/usr/bin/konsctl
     install  -Dm755   kscreen-toggle-laptop.sh   ${pkgdir}/usr/bin/kscreen-toggle-laptop
     install  -Dm755   kombi/kombi.py             ${pkgdir}/usr/bin/kombi
-    install  -Dm755   qkbdialog/audio.py         ${pkgdir}/usr/bin/qkbaudio
+    install  -Dm755   qkbdialog/vox.py           ${pkgdir}/usr/bin/qkvox
 }

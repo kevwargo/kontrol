@@ -700,7 +700,7 @@ class MenuDialog(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setDesktopFileName("qkb-audio")
+    app.setDesktopFileName("qkvox")
     menu = MenuDialog(app)
 
     asyncio.run(menu.run(), loop_factory=QEventLoop)

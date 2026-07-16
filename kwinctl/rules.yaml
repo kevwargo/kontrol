@@ -58,8 +58,8 @@ htop:
 okteta:
   key: Meta+Shift+O
   cls: org.kde.okteta
-qkb-audio:
+qkvox:
   key: Meta+Shift+A
-  cls: qkb-audio
-  command: qkbaudio
+  cls: qkvox
+  command: qkvox
   auto: true
