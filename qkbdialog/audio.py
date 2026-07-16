@@ -220,13 +220,20 @@ class BTManager(AsyncTaskSupervisor):
             "org.freedesktop.DBus.ObjectManager"
         )
         manager.on_interfaces_added(self.as_task(self.iface_added))
-        manager.on_interfaces_removed(self.iface_removed)
+        manager.on_interfaces_removed(self.as_task(self.iface_removed))
 
         objects = await manager.call_get_managed_objects()
         for path, obj_ifaces in objects.items():
             await self.iface_added(path, obj_ifaces)
 
     async def notify_device(self, path: str):
+        dev = self._devices.get(path)
+
+        if dev and not self._ifaces.get(path):
+            logging.info(f"{dev} disappeared")
+            dev.connected = False
+            return
+
         intro = await self.bus.introspect(self.BUS_NAME, path)
         iface = self.bus.get_proxy_object(self.BUS_NAME, path, intro).get_interface(
             self.DEVICE_IFACE
@@ -236,15 +243,13 @@ class BTManager(AsyncTaskSupervisor):
         address = await iface.get_address()
         connected = await iface.get_connected()
 
-        if (dev := self._devices.get(path)) is None:
-            dev = self._devices[path] = BTDevice(
-                id=path, name=name, mac=address, connected=connected
-            )
-            self.on_new_device(dev)
-        else:
+        if dev:
             dev.name = name
             dev.address = address
             dev.connected = connected
+        else:
+            self._devices[path] = BTDevice(id=path, name=name, mac=address, connected=connected)
+            self.on_new_device(self._devices[path])
 
     def notify_adapter(self, path, adapter):
         logging.info(f"New adapter at {path}: {adapter['Address']}")
@@ -262,16 +267,16 @@ class BTManager(AsyncTaskSupervisor):
         elif adapter := new_ifaces.get(self.ADAPTER_IFACE):
             self.notify_adapter(path, adapter)
 
-    def iface_removed(self, path: str, removed_ifaces):
+    async def iface_removed(self, path: str, removed_ifaces):
         self._ifaces[path].difference_update(removed_ifaces)
-        if new := self._ifaces[path]:
-            logging.debug(f"dbus removed: {path} - {sorted(removed_ifaces)} = {sorted(new)}")
-        else:
-            logging.debug(f"dbus removed completely: {path}")
-            del self._ifaces[path]
+
+        if not self._ifaces[path]:
             if path == self._adapter_path:
                 self._adapter_ready.clear()
                 self.on_adapter_state_change(False)
+
+        if path in self._devices:
+            await self.notify_device(path)
 
     def activate_adapter(self):
         run_cmd(["rfkill", "unblock", "bluetooth"], check=True)
