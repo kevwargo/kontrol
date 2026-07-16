@@ -247,6 +247,10 @@ class BTManager(AsyncTaskSupervisor):
 
         name = await iface.get_name()
         address = await iface.get_address()
+        if not await iface.get_paired():
+            logging.debug(f"Ignoring unpaired BT device {address}({name})")
+            return
+
         connected = await iface.get_connected()
 
         if dev:
