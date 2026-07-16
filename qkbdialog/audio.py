@@ -284,7 +284,7 @@ class BTManager(AsyncTaskSupervisor):
 
 
 class SinkManager(QObject):
-    EVENT_REGEX = re.compile(b"^Event '(new|remove|change)' on (card|sink) #[0-9]+")
+    EVENT_REGEX = re.compile(b"^Event '(new|remove|change)' on (card|sink(-input)?) #[0-9]+")
 
     def __init__(self, parent):
         super().__init__(parent)
