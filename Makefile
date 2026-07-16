@@ -18,4 +18,4 @@ install:
 	install  -Dm755  kombi/kombi.py             /usr/bin/kombi
 	install  -Dm755  konsctl/konsctl.py         /usr/bin/konsctl
 	install  -Dm755  kscreen-toggle-laptop.sh   /usr/bin/kscreen-toggle-laptop
-	install  -Dm755  qkbdialog/audio.py         /usr/bin/qkbaudio
+	install  -Dm755  qkbdialog/vox.py           /usr/bin/qkvox
