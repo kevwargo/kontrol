@@ -491,3 +491,137 @@ RPM payload
 ```
 
 So your `pyproject.toml` remains the single source of truth for Python build requirements.
+
+## 3
+
+Your suspicion is justified. Heredocs **can** work in Makefiles, but they are one of those things that are technically valid and practically annoying because Make's parsing rules get involved.
+
+For example, this:
+
+```make
+foo:
+	cat <<EOF > file.py
+	print("hello")
+	EOF
+```
+
+does **not** work as most people expect, because every recipe line is executed separately by a different shell invocation. The shell sees:
+
+```sh
+cat <<EOF > file.py
+```
+
+and waits forever for `EOF` because the next Make recipe line is not sent to the same shell.
+
+You need:
+
+```make
+foo:
+	cat <<'EOF' > file.py
+	print("hello")
+	EOF
+```
+
+with `.ONESHELL:`:
+
+```make
+.ONESHELL:
+
+foo:
+	cat <<'EOF' > file.py
+	print("hello")
+	EOF
+```
+
+or the uglier continuation form:
+
+```make
+foo:
+	cat <<'EOF' > file.py; \
+	print("hello"); \
+	EOF
+```
+
+Neither is particularly pleasant.
+
+---
+
+For your use case, I would avoid heredocs completely and put the logic in a tiny helper script.
+
+Something like:
+
+```text
+tools/
+    locked_version.py
+```
+
+```python
+#!/usr/bin/env python3
+
+import sys
+import tomllib
+
+pkg = sys.argv[1]
+
+with open("uv.lock", "rb") as f:
+    lock = tomllib.load(f)
+
+for p in lock["package"]:
+    if p["name"] == pkg:
+        print(f"{p['name']}=={p['version']}")
+        sys.exit(0)
+
+raise SystemExit(f"{pkg} not found in uv.lock")
+```
+
+Then Make becomes pleasantly boring:
+
+```make
+QASYNC_WHEEL := rpm/SOURCES/qasync.whl
+
+$(QASYNC_WHEEL):
+	mkdir -p rpm/SOURCES
+	python tools/download_wheel.py qasync $@
+
+rpm: $(QASYNC_WHEEL)
+	rpmbuild ...
+```
+
+and `download_wheel.py` does:
+
+```python
+import subprocess
+import sys
+
+pkg = sys.argv[1]
+dest = sys.argv[2]
+
+req = subprocess.check_output(
+    ["python", "tools/locked_version.py", pkg],
+    text=True,
+).strip()
+
+subprocess.check_call(
+    [
+        sys.executable,
+        "-m",
+        "pip",
+        "download",
+        "--no-deps",
+        "--dest",
+        ".",
+        req,
+    ]
+)
+
+# rename qasync-*.whl -> requested destination
+```
+
+The nice property is:
+
+* Make knows only about files.
+* Python handles TOML.
+* `uv.lock` remains the single source of truth.
+* No escaping hell.
+
+Given that you're already in a Python project, adding a `tools/` directory with a couple of small build helpers is probably cleaner than trying to make Make perform data extraction tasks.
