@@ -43,11 +43,10 @@ kdenlive:
   key: Meta+K
   cls: org.kde.kdenlive
   command: kdenlive
-mocp:
+amarok:
   key: Meta+Shift+Q
-  cls: foot
-  caption: MOCP
-  command: foot --window-size-pixels=1024x768 --title MOCP mocp
+  cls: org.kde.amarok
+  command: amarok
   auto: true
 htop:
   key: Meta+Shift+C
