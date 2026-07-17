@@ -1,26 +1,27 @@
-pkgname=kontrol
-pkgver=0.5.1
+pkgname=${PKG_NAME}
+pkgver=${PKG_VERSION}
 pkgrel=1
-pkgdesc="A set of tools to configure Plasma 6 (Wayland) in a predictable way"
+pkgdesc="${PKG_DESCRIPTION}"
 arch=(any)
 license=(MIT)
 
 depends=(python python-dbus-next python-yaml python-pyqt6 python-qasync)
+makedepends=(python-build python-hatchling python-installer)
 
 source=(kontrol_src.tar.zst)
 sha256sums=(SKIP)
 
-package() {
-    install  -Dm755   kwinctl/kwinctl.py         ${pkgdir}/usr/bin/kwinctl
-    install  -Dm755   kwinctl/kwinjs-inspect.py  ${pkgdir}/usr/bin/kwinjs-inspect
-    install  -Dm644   kwinctl/kwinctl.service    ${pkgdir}/usr/lib/systemd/user/kwinctl.service
-    install  -Dm644   kwinctl/kwinctl.js         ${pkgdir}/usr/share/kwinctl/kwinctl.js
-    install  -Dm644   kwinctl/rules.yaml         ${pkgdir}/usr/share/kwinctl/rules.yaml
-    install  -Dm644   kwinctl/commands.yaml      ${pkgdir}/usr/share/kwinctl/commands.yaml
-    install  -Dm644   kwinctl/overrides.yaml     ${pkgdir}/usr/share/kwinctl/overrides.yaml
+build() {
+    python -m build --wheel --no-isolation
+}
 
-    install  -Dm755   konsctl/konsctl.py         ${pkgdir}/usr/bin/konsctl
-    install  -Dm755   kscreen-toggle-laptop.sh   ${pkgdir}/usr/bin/kscreen-toggle-laptop
-    install  -Dm755   kombi/kombi.py             ${pkgdir}/usr/bin/kombi
-    install  -Dm755   qkbdialog/vox.py           ${pkgdir}/usr/bin/qkvox
+package() {
+    python -m installer --destdir=${pkgdir} dist/${PKG_NAME}-${PKG_VERSION}*.whl
+
+    install -Dm644 systemd/kwinctl.service ${pkgdir}/usr/lib/systemd/user/kwinctl.service
+
+    install -Dm644 src/kontrol/kwinctl/kwinctl.js     ${pkgdir}/usr/share/kwinctl/kwinctl.js
+    install -Dm644 src/kontrol/kwinctl/rules.yaml     ${pkgdir}/usr/share/kwinctl/rules.yaml
+    install -Dm644 src/kontrol/kwinctl/commands.yaml  ${pkgdir}/usr/share/kwinctl/commands.yaml
+    install -Dm644 src/kontrol/kwinctl/overrides.yaml ${pkgdir}/usr/share/kwinctl/overrides.yaml
 }

@@ -1,14 +1,14 @@
 ENV_MK := env.mk
 GEN_ENV_MK := ./scripts/gen-env-mk.py
 
--include env.mk
+-include $(ENV_MK)
 
 RPMTOP := $(CURDIR)/rpm
-RPM_SOURCE := $(NAME)-$(VERSION).tar.zst
+RPM_SOURCE := $(PKG_NAME)-$(PKG_VERSION).tar.zst
 RPMBUILD_DEFINES := --define "_topdir $(RPMTOP)" \
-	--define "kontrol_name $(NAME)" \
-	--define "kontrol_version $(VERSION)" \
-	--define "kontrol_description $(DESCRIPTION)" \
+	--define "kontrol_name $(PKG_NAME)" \
+	--define "kontrol_version $(PKG_VERSION)" \
+	--define "kontrol_description $(PKG_DESCRIPTION)" \
 	--define "kontrol_src $(RPM_SOURCE)" \
 	--define "qasync_whl $(QASYNC_WHEEL_FILENAME)"
 
@@ -17,6 +17,9 @@ RPMBUILD_DEFINES := --define "_topdir $(RPMTOP)" \
 build-pacman:
 	tar -caf pacman/kontrol_src.tar.zst --exclude-vcs --exclude-vcs-ignores --exclude pacman .
 	makepkg --dir pacman --force $(EXTRA_MAKEPKG_BUILD_FLAGS)
+
+clean-pacman:
+	cd pacman && rm -rf src pkg *.tar.zst
 
 install-pacman:
 	makepkg --dir pacman --install --noconfirm
@@ -29,7 +32,7 @@ prepare-rpm-source:
 	tar -caf $(RPMTOP)/SOURCES/$(RPM_SOURCE) \
 		--exclude-vcs --exclude-vcs-ignores \
 		--exclude configs --exclude pacman --exclude rpm \
-		--transform="s|^\.|$(NAME)-$(VERSION)|" .
+		--transform="s|^\.|$(PKG_NAME)-$(PKG_VERSION)|" .
 
 $(RPMTOP)/SOURCES/$(QASYNC_WHEEL_FILENAME):
 	mkdir -p $(RPMTOP)/SOURCES
@@ -38,7 +41,7 @@ $(RPMTOP)/SOURCES/$(QASYNC_WHEEL_FILENAME):
 
 install-rpmdeps:
 	-rpmbuild $(RPMBUILD_DEFINES) -br $(RPMTOP)/SPEC/kontrol.spec
-	sudo dnf builddep $(RPMTOP)/SRPMS/$(NAME)-$(VERSION)-*.rpm
+	sudo dnf builddep $(RPMTOP)/SRPMS/$(PKG_NAME)-$(PKG_VERSION)-*.rpm
 
-env.mk: pyproject.toml uv.lock $(GEN_ENV_MK)
+$(ENV_MK): pyproject.toml uv.lock $(GEN_ENV_MK)
 	$(GEN_ENV_MK) $@
