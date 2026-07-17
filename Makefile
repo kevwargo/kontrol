@@ -12,7 +12,7 @@ RPMBUILD_DEFINES := --define "_topdir $(RPMTOP)" \
 	--define "kontrol_src $(RPM_SOURCE)" \
 	--define "qasync_whl $(QASYNC_WHEEL_FILENAME)"
 
-.PHONY: build-pacman install-pacman install build-rpm prepare-rpm-source install-rpmdeps
+.PHONY: build-pacman install-pacman build-rpm prepare-rpm-source install-rpmdeps
 
 build-pacman:
 	tar -caf pacman/kontrol_src.tar.zst --exclude-vcs --exclude-vcs-ignores --exclude pacman .

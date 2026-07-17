@@ -19,9 +19,9 @@ bt-on:
 bt-off:
   key: Meta+Alt+B
   shell: rfkill block bluetooth
-kscreen-toggle-laptop:
+kscreen-toggle:
   key: Meta+Alt+X
-  shell: kscreen-toggle-laptop
+  shell: kscreen-toggle
 open-foot:
   key: Meta+Shift+T
   shell: foot -w 1200x800
