@@ -9,20 +9,23 @@ def main():
     try:
         builtin = next(s for s in screens if s["name"] == BUILTIN_SCREEN_NAME)
     except StopIteration:
-        # Don't do anything if eDP-1 is not found
+        print(f"No {BUILTIN_SCREEN_NAME} screen found.")
         return
 
     if len(screens) == 1:
-        # Enable the sole builtin display just in case
+        print(f"No external screens, enabling {BUILTIN_SCREEN_NAME} screen")
         _kscreen_enable(True)
     else:
-        _kscreen_enable(not builtin["enabled"])
+        if builtin["enabled"]:
+            print(f"Disabling {BUILTIN_SCREEN_NAME}")
+            _kscreen_enable(False)
+        else:
+            print(f"Enabling {BUILTIN_SCREEN_NAME}")
+            _kscreen_enable(True)
 
 
 def _kscreen_enable(enable: bool):
-    args = ["kscreen-doctor", f"output.{BUILTIN_SCREEN_NAME}.{'en' if enable else 'dis'}able"]
-    print(" ".join(args))
-    run(args)
+    run(["kscreen-doctor", f"output.{BUILTIN_SCREEN_NAME}.{'en' if enable else 'dis'}able"])
 
 
 if __name__ == "__main__":
