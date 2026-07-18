@@ -58,3 +58,6 @@ $(RPM_DIR)/SOURCES/$(QASYNC_WHEEL_FILENAME):
 	mkdir -p $(RPM_DIR)/SOURCES
 	curl -L $(QASYNC_WHEEL_URL) -o $@
 	printf '%s  %s\n' $(QASYNC_WHEEL_SHA256) $@ | sha256sum --check
+
+rpm-docker:
+	cd docker && HOST_USER=$(shell id -u):$(shell id -g) docker compose run --rm --build rpm-builder

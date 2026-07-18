@@ -1,0 +1,12 @@
+services:
+  rpm-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.rpm
+    volumes:
+      - ..:/kontrol
+    working_dir: /kontrol
+    environment:
+      UV_CACHE_DIR: /kontrol/.uv-cache
+    user: ${HOST_USER:?}
+    command: make build-rpm

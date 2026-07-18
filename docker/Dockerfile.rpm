@@ -1,0 +1,6 @@
+FROM fedora:44
+
+RUN echo 'install_weak_deps=False' >> /etc/dnf/dnf.conf
+RUN dnf install -y make rpmdevtools systemd-rpm-macros \
+    uv python3-{rpm-macros,hatchling,build,installer} \
+    && dnf clean all
