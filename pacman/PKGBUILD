@@ -8,14 +8,17 @@ license=(MIT)
 depends=(python python-dbus-next python-yaml python-pyqt6 python-qasync)
 makedepends=(python-build python-hatchling python-installer)
 
-source=(kontrol_src.tar.zst)
+source=(${PKG_SOURCE_DIST})
 sha256sums=(SKIP)
 
 build() {
+    cd ${pkgname}-${pkgver}
     python -m build --wheel --no-isolation
 }
 
 package() {
+    cd ${pkgname}-${pkgver}
+
     python -m installer --destdir=${pkgdir} dist/${PKG_NAME}-${PKG_VERSION}*.whl
 
     install -Dm644 systemd/kwinctl.service ${pkgdir}/usr/lib/systemd/user/kwinctl.service
