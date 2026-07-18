@@ -1,5 +1,7 @@
 import asyncio
 import json
+import shutil
+import subprocess
 import sys
 
 from dbus_next import BusType
@@ -35,7 +37,10 @@ async def _run(key: str):
         for s in map(ShortcutInfo.from_list, raw_res)
     ]
 
-    print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
+    if sys.stdout.isatty() and (jq := shutil.which("jq")):
+        subprocess.run([jq], input=json.dumps(res, default=str), text=True, check=True)
+    else:
+        print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
 
 
 if __name__ == "__main__":
