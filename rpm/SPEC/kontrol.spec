@@ -44,6 +44,7 @@ install  -Dm644  src/kontrol/kwinctl/overrides.yaml  %{buildroot}/usr/share/kwin
 %files
 %{_bindir}/kombi
 %{_bindir}/konsctl
+%{_bindir}/kscreen-toggle
 %{_bindir}/kwinctl
 %{_bindir}/kwinjs
 %{_bindir}/qkvox
