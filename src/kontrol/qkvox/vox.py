@@ -12,8 +12,6 @@ from subprocess import PIPE, CalledProcessError, Popen
 from subprocess import run as run_cmd
 from typing import Iterator, get_type_hints
 
-from dbus_next import BusType
-from dbus_next.aio import MessageBus
 from dbus_next.errors import DBusError
 from PyQt6.QtCore import (QObject, QProcess, Qt, QTimer, pyqtBoundSignal,
                           pyqtSignal)
@@ -22,6 +20,8 @@ from PyQt6.QtWidgets import (QApplication, QButtonGroup, QGridLayout, QLabel,
                              QProgressBar, QPushButton, QRadioButton,
                              QVBoxLayout, QWidget)
 from qasync import QEventLoop
+
+from kontrol.utils.dbus import SystemBus
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", logging.INFO),
@@ -32,9 +32,12 @@ logging.basicConfig(
 def main():
     app = QApplication(sys.argv)
     app.setDesktopFileName("qkvox")
-    menu = MenuDialog(app)
 
-    asyncio.run(menu.run(), loop_factory=QEventLoop)
+    asyncio.run(run(app), loop_factory=QEventLoop)
+
+
+async def run(app: QApplication):
+    await MenuDialog(app).run()
 
 
 def connect(sig: pyqtBoundSignal, slot: Callable):
@@ -206,7 +209,7 @@ class BTManager(AsyncTaskSupervisor):
     DEVICE_IFACE = "org.bluez.Device1"
     ADAPTER_IFACE = "org.bluez.Adapter1"
 
-    def __init__(self, bus: MessageBus):
+    def __init__(self, bus: SystemBus):
         super().__init__()
 
         self.bus = bus
@@ -508,8 +511,8 @@ class MenuDialog(QWidget):
         self.keymap = Keymap(self)
 
         self.sink_mgr = SinkManager(self)
-        self.sysbus: MessageBus | None = None
-        self.bt_mgr: BTManager | None = None
+        self.sysbus = SystemBus()
+        self.bt_mgr = BTManager(self.sysbus)
 
         self._output_activation_task: asyncio.Task | None = None
         self._esc_shortcut = QShortcut(QKeySequence("ESC"), self)
@@ -548,8 +551,6 @@ class MenuDialog(QWidget):
         self.sink_mgr.on_sinks_changed = self.on_sinks_changed
         self.sink_mgr.start()
 
-        self.sysbus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-        self.bt_mgr = BTManager(self.sysbus)
         self.bt_mgr.on_new_device = self.on_new_bt
         self.bt_mgr.on_adapter_state_change = self.on_bt_state_change
         await self.bt_mgr.start()

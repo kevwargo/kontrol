@@ -10,18 +10,25 @@ from subprocess import PIPE, Popen
 from tempfile import NamedTemporaryFile
 
 import yaml
-from dbus_next import BusType, Message
-from dbus_next.aio import MessageBus
+from dbus_next import Message
 from dbus_next.service import ServiceInterface, method
 
+from kontrol.utils.dbus import SessionBus
 from kontrol.utils.kbd import KeySequence, ShortcutInfo
 
 SCRIPT_UNIQUE_NAME = "kwinctl"
 
 
 def main():
+    asyncio.run(run())
+
+
+async def run():
     env = Environment()
-    asyncio.run(OverridesManager(env).sync() if env.args.sync_overrides else KWinCtl(env).run())
+    if env.args.sync_overrides:
+        await OverridesManager(env).sync()
+    else:
+        await KWinCtl(env).run()
 
 
 class Environment:
@@ -113,7 +120,7 @@ class KWinCtl(ServiceInterface):
     def __init__(self, env: Environment):
         super().__init__(self.NAME)
         self.env = env
-        self.bus: Bus | None = None
+        self.bus = Bus()
         self.main_script = None
         self.remaps: list[ShortcutInfo] = []
         self.hotkeys = HotkeysConfig(self.env)
@@ -215,9 +222,7 @@ class KWinCtl(ServiceInterface):
             self.env.log.info(f"reaped {'; '.join(reaped)}")
 
     async def _register_dbus_service(self):
-        self.bus = await Bus().connect()
-        self.bus.export("/", self)
-        await self.bus.request_name(self.NAME)
+        await self.bus.export_name(self.NAME, "/", self)
         self.env.log.info(f"{self.NAME} D-Bus service running...")
 
     async def _load_main_script(self):
@@ -328,58 +333,45 @@ class KWinCtl(ServiceInterface):
             self.env.log.info("Shutdown complete.")
 
 
-class Bus(MessageBus):
-    def __init__(self, *args, **kwargs):
-        if not kwargs:
-            kwargs.update(bus_type=BusType.SESSION)
-
-        super().__init__(*args, **kwargs)
-        self._iface_cache = {}
-
+class Bus(SessionBus):
     async def kgl_all_shortcuts(self) -> list[ShortcutInfo]:
         all_shortcuts = []
-        kgl = await self._get_iface(
-            "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel"
-        )
+        kgl = await self.iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
         names = await kgl.call_all_components()
         for name in names:
-            c = await self._get_iface(
-                "org.kde.kglobalaccel", name, "org.kde.kglobalaccel.Component"
-            )
+            c = await self.iface("org.kde.kglobalaccel", name, "org.kde.kglobalaccel.Component")
             all_shortcuts.extend(map(ShortcutInfo.from_list, await c.call_all_shortcut_infos()))
 
         return all_shortcuts
 
     async def kgl_set_keys(self, *args):
-        kgl = await self._get_iface(
-            "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel"
-        )
+        kgl = await self.iface("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel")
         return await kgl.call_set_foreign_shortcut_keys(*args)
 
     async def kgl_cleanup_kwin(self):
-        comp = await self._get_iface(
+        comp = await self.iface(
             "org.kde.kglobalaccel", "/component/kwin", "org.kde.kglobalaccel.Component"
         )
         return await comp.call_clean_up()
 
     async def kwin_load_script(self, script_id: int):
-        return await self._get_iface(
+        return await self.iface(
             "org.kde.KWin",
             f"/Scripting/Script{script_id}",
             "org.kde.kwin.Script",
         )
 
     async def krunner_query(self, prompt: str):
-        iface = await self._get_iface("org.kde.krunner", "/App", "org.kde.krunner.App")
+        iface = await self.iface("org.kde.krunner", "/App", "org.kde.krunner.App")
         await iface.call_display()
         await iface.call_query(prompt)
 
     async def klipper_set(self, text: str):
-        iface = await self._get_iface("org.kde.klipper", "/klipper", "org.kde.klipper.klipper")
+        iface = await self.iface("org.kde.klipper", "/klipper", "org.kde.klipper.klipper")
         await iface.call_set_clipboard_contents(text)
 
     async def notify(self, summary: str, body: str, timeout: int):
-        iface = await self._get_iface(
+        iface = await self.iface(
             "org.freedesktop.Notifications",
             "/org/freedesktop/Notifications",
             "org.freedesktop.Notifications",
@@ -388,17 +380,6 @@ class Bus(MessageBus):
 
     async def send_msg(self, **kwargs):
         return (await self.call(Message(**kwargs))).body
-
-    async def _get_iface(self, service: str, path: str, interface: str):
-        if cached := self._iface_cache.get((service, path, interface)):
-            return cached
-
-        introspection = await self.introspect(service, path)
-        obj = self.get_proxy_object(service, path, introspection)
-        iface = obj.get_interface(interface)
-        self._iface_cache[(service, path, interface)] = iface
-
-        return iface
 
 
 class HotkeysConfig:
@@ -472,12 +453,10 @@ def json_default(x) -> str:
 
 class OverridesManager:
     def __init__(self, env: Environment):
-        self.bus: Bus | None = None
+        self.bus = Bus()
         self.env = env
 
     async def sync(self):
-        self.bus = await Bus().connect()
-
         if self.args.reset_overrides:
             overrides = {}
         else:
