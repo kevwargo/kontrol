@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from signal import SIGINT
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QApplication, QGridLayout, QLabel, QPushButton,
                              QSlider, QWidget)
 from qasync import QEventLoop
@@ -38,6 +38,12 @@ async def run():
 
 
 class Menu(QWidget, AsyncTaskSupervisor):
+    _delta_keys = [
+        ("PgUp", "PgDown"),
+        ("Left", "Right"),
+        ("-", "="),
+    ]
+
     def __init__(self):
         super().__init__()
 
@@ -45,6 +51,7 @@ class Menu(QWidget, AsyncTaskSupervisor):
         self._done = asyncio.Event()
         self._layout = QGridLayout(self)
         self._displays: dict[str, UIDisplay] = {}
+        self._shortcuts: list[QShortcut] = []
 
         self.setWindowTitle("Display brightness")
         self.setWindowFlag(Qt.WindowType.Dialog)
@@ -67,6 +74,9 @@ class Menu(QWidget, AsyncTaskSupervisor):
         await self._manager.on_display_added(self.as_task(self._handle_display_added))
         await self._manager.on_display_removed(self._handle_display_removed)
         await self._manager.on_brightness_changed(self._handle_brightness_changed)
+
+        quit_shortcut = QShortcut(QKeySequence("Q"), self)
+        connect(quit_shortcut.activated, self._done.set)
 
     async def _handle_display_added(self, name: str):
         if name in self._displays:
@@ -92,7 +102,20 @@ class Menu(QWidget, AsyncTaskSupervisor):
         while self._layout.count():
             self._layout.takeAt(0)
 
+        for s in self._shortcuts:
+            s.deleteLater()
+        self._shortcuts = []
+
         for row, display in enumerate(self._displays.values()):
+            if row < len(self._delta_keys):
+                dec_sc, inc_sc = map(
+                    lambda k: QShortcut(QKeySequence(k), self), self._delta_keys[row]
+                )
+                dec_sc.setContext(Qt.ShortcutContext.WindowShortcut)
+                inc_sc.setContext(Qt.ShortcutContext.WindowShortcut)
+                self._shortcuts.extend((dec_sc, inc_sc))
+                display.control.set_shortcuts(dec_sc, inc_sc)
+
             display.add_to_grid(row)
 
     def _handle_brightness_changed(self, name: str, val: int, client_name: str, client_ctx: str):
@@ -192,8 +215,8 @@ class UIDisplayControl(QWidget):
 
         self._val_label = QLabel(self)
 
-        self._button_inc = QPushButton("+", self)
-        self._button_dec = QPushButton("-", self)
+        self._button_inc = QPushButton("+10%", self)
+        self._button_dec = QPushButton("-10%", self)
         connect(self._button_dec.clicked, self._button_handler(-10))
         connect(self._button_inc.clicked, self._button_handler(10))
         for but in (self._button_dec, self._button_inc):
@@ -216,6 +239,12 @@ class UIDisplayControl(QWidget):
 
         logging.info(f"user changed: {val}")
         self.value_changed.emit(val)
+
+    def set_shortcuts(self, dec_sc: QShortcut, inc_sc: QShortcut):
+        self._button_dec.setText(f"[{dec_sc.key().toString()}]")
+        connect(dec_sc.activated, self._button_dec.animateClick)
+        self._button_inc.setText(f"[{inc_sc.key().toString()}]")
+        connect(inc_sc.activated, self._button_inc.animateClick)
 
     def _button_handler(self, delta_percent: int):
         def clicked(checked=False):
