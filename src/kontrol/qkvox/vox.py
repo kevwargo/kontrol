@@ -13,8 +13,7 @@ from subprocess import run as run_cmd
 from typing import Iterator, get_type_hints
 
 from dbus_next.errors import DBusError
-from PyQt6.QtCore import (QObject, QProcess, Qt, QTimer, pyqtBoundSignal,
-                          pyqtSignal)
+from PyQt6.QtCore import QObject, QProcess, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QApplication, QButtonGroup, QGridLayout, QLabel,
                              QProgressBar, QPushButton, QRadioButton,
@@ -23,6 +22,7 @@ from qasync import QEventLoop
 
 from kontrol.utils.asynch import AsyncTaskSupervisor
 from kontrol.utils.dbus import SystemBus
+from kontrol.utils.qt.signals import connect
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", logging.INFO),
@@ -39,17 +39,6 @@ def main():
 
 async def run():
     await MenuDialog().run()
-
-
-def connect(sig: pyqtBoundSignal, slot: Callable):
-    @wraps(slot)
-    def wrapped(*args, **kwargs):
-        try:
-            return slot(*args, **kwargs)
-        except Exception as e:
-            logging.exception(f"{type(e).__name__}({e})")
-
-    sig.connect(wrapped)
 
 
 def multi_command(*commands: list[list[str]]) -> Iterator[bytes]:
