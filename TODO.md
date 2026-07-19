@@ -1,3 +1,7 @@
+# General
+
+- Use `AsyncTaskSupervisor` as a standalone object, don't inherit from it
+
 # KWinCTL
 
 ## Rules
