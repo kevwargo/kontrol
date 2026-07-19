@@ -421,8 +421,8 @@ class AudioOutput(QDataclass):
         return False
 
     def add_to_grid(self, grid: QGridLayout, row: int):
-        grid.addWidget(self._shortcut_label, row, 0)
-        grid.addWidget(self.button, row, 1)
+        grid.addWidget(self._shortcut_label, row, 0, alignment=Qt.AlignmentFlag.AlignRight)
+        grid.addWidget(self.button, row, 1, alignment=Qt.AlignmentFlag.AlignLeft)
 
     @property
     def _label(self) -> str:
@@ -470,7 +470,7 @@ class MenuDialog(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Choose audio output")
+        self.setWindowTitle("QKVox: audio outputs")
         self.setWindowFlag(Qt.WindowType.Dialog)
         self.setWindowIcon(QIcon.fromTheme("audio-on"))
 
@@ -604,6 +604,8 @@ class MenuDialog(QWidget):
         self.keymap.unbind(self.KEY_ENABLE_BT)
 
     def _update_ui(self):
+        logging.debug("Update UI started: " + self._get_minsize())
+
         self.audio_outputs.sort()
 
         for o in self.audio_outputs:
@@ -616,7 +618,19 @@ class MenuDialog(QWidget):
             self._bind_output(o)
             o.add_to_grid(self.grid, row)
 
-        logging.debug("Update UI finished")
+        QTimer.singleShot(0, self._adjust_size)
+
+        logging.debug("Update UI finished: " + self._get_minsize())
+
+    def _adjust_size(self):
+        self.adjustSize()
+        logging.debug("Update UI: after size adjust: " + self._get_minsize())
+
+    def _get_minsize(self):
+        return (
+            f"hint:{self.minimumSizeHint()} s:{self.minimumSize()}"
+            f" w:{self.minimumWidth()} h:{self.minimumHeight()}"
+        )
 
     def _add_output(self, *, sink: Sink | None = None, bt_dev: BTDevice | None = None):
         o = AudioOutput(self, sink=sink, bt_dev=bt_dev)
