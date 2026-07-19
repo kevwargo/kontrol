@@ -27,3 +27,8 @@ packages = ["src/kontrol"]
 
 [tool.black]
 line-length=99
+
+[dependency-groups]
+dev = [
+    "ipython>=9.15.0",
+]
