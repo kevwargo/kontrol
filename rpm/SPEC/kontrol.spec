@@ -45,6 +45,7 @@ install -Dm644 src/kontrol/kwinctl/overrides.yaml %{buildroot}/usr/share/kwinctl
 %systemd_user_post kwinctl.service
 
 %files
+%{_bindir}/kbrite
 %{_bindir}/kombi
 %{_bindir}/konsctl
 %{_bindir}/kscreen-toggle

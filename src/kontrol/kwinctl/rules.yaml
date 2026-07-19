@@ -62,3 +62,8 @@ qkvox:
   cls: qkvox
   command: qkvox
   auto: true
+kbrite:
+  key: Meta+Shift+R
+  cls: kbrite
+  command: kbrite
+  auto: true
