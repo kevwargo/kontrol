@@ -8,10 +8,15 @@ class AsyncTaskSupervisor:
         super().__init__(*args, **kwargs)
         self.__tasks: set[asyncio.Task] = set()
 
-    def as_task(self, fn):
+    def start_task(self, coro):
+        task = asyncio.create_task(coro)
+        self.__tasks.add(task)
+        task.add_done_callback(self.__task_done)
+
+    def as_task(self, fn, **kwargs):
         @wraps(fn)
-        def wrapped(*args, **kwargs):
-            self.__start_task(fn(*args, **kwargs))
+        def wrapped(*args):
+            self.start_task(fn(*args, **kwargs))
 
         return wrapped
 
@@ -24,11 +29,6 @@ class AsyncTaskSupervisor:
 
         await asyncio.gather(*self.__tasks, return_exceptions=True)
 
-    def __start_task(self, coro):
-        task = asyncio.create_task(coro)
-        self.__tasks.add(task)
-        task.add_done_callback(self.__task_done)
-
     def __task_done(self, task: asyncio.Task):
         self.__tasks.discard(task)
 
@@ -37,4 +37,4 @@ class AsyncTaskSupervisor:
         except asyncio.CancelledError:
             pass
         except Exception:
-            logging.exception()
+            logging.exception(f"Exception in {task}")
