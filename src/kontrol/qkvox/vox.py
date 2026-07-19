@@ -15,12 +15,13 @@ from typing import Iterator, get_type_hints
 from dbus_next.errors import DBusError
 from PyQt6.QtCore import (QObject, QProcess, Qt, QTimer, pyqtBoundSignal,
                           pyqtSignal)
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QApplication, QButtonGroup, QGridLayout, QLabel,
                              QProgressBar, QPushButton, QRadioButton,
                              QVBoxLayout, QWidget)
 from qasync import QEventLoop
 
+from kontrol.utils.asynch import AsyncTaskSupervisor
 from kontrol.utils.dbus import SystemBus
 
 logging.basicConfig(
@@ -33,11 +34,11 @@ def main():
     app = QApplication(sys.argv)
     app.setDesktopFileName("qkvox")
 
-    asyncio.run(run(app), loop_factory=QEventLoop)
+    asyncio.run(run(), loop_factory=QEventLoop)
 
 
-async def run(app: QApplication):
-    await MenuDialog(app).run()
+async def run():
+    await MenuDialog().run()
 
 
 def connect(sig: pyqtBoundSignal, slot: Callable):
@@ -169,39 +170,6 @@ class BTDevice(QObject, QDataclass):
 
     def match_sink(self, sink: Sink) -> bool:
         return self.mac.replace(":", "_").upper() in sink.name.upper()
-
-
-class AsyncTaskSupervisor:
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__tasks: set[asyncio.Task] = set()
-
-    def as_task(self, fn):
-        return lambda *args, **kwargs: self.__start_task(fn(*args, **kwargs))
-
-    async def cleanup(self):
-        if not self.__tasks:
-            return
-
-        for task in self.__tasks:
-            task.cancel()
-
-        await asyncio.gather(*self.__tasks, return_exceptions=True)
-
-    def __start_task(self, coro):
-        task = asyncio.create_task(coro)
-        self.__tasks.add(task)
-        task.add_done_callback(self.__task_done)
-
-    def __task_done(self, task: asyncio.Task):
-        self.__tasks.discard(task)
-
-        try:
-            task.result()
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            logging.exception()
 
 
 class BTManager(AsyncTaskSupervisor):
@@ -499,12 +467,12 @@ class MenuDialog(QWidget):
     KEY_QUIT = "Q"
     KEY_ENABLE_BT = "B"
 
-    def __init__(self, app: QApplication):
+    def __init__(self):
         super().__init__()
-        self.app = app
 
         self.setWindowTitle("Choose audio output")
         self.setWindowFlag(Qt.WindowType.Dialog)
+        self.setWindowIcon(QIcon.fromTheme("audio-on"))
 
         self.button_group = QButtonGroup(self)
         self.audio_outputs: list[AudioOutput] = []
