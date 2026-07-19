@@ -185,7 +185,6 @@ class BTManager(AsyncTaskSupervisor):
         self._ifaces: dict[str, set] = defaultdict(set)
         self._devices: dict[str, BTDevice] = {}
 
-        # TODO: adapt for multiple adapters (xD)
         self._adapter_path: str | None = None
         self._adapter_ready = asyncio.Event()
 
