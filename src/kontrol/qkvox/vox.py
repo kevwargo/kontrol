@@ -3,11 +3,9 @@ import json
 import logging
 import os
 import re
-import sys
 from collections import defaultdict
 from collections.abc import Callable
 from functools import cached_property, wraps
-from signal import SIGINT
 from subprocess import PIPE, CalledProcessError, Popen
 from subprocess import run as run_cmd
 from typing import Iterator, get_type_hints
@@ -15,13 +13,12 @@ from typing import Iterator, get_type_hints
 from dbus_next.errors import DBusError
 from PyQt6.QtCore import QObject, QProcess, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
-from PyQt6.QtWidgets import (QApplication, QButtonGroup, QGridLayout, QLabel,
-                             QProgressBar, QPushButton, QRadioButton,
-                             QVBoxLayout, QWidget)
-from qasync import QEventLoop
+from PyQt6.QtWidgets import (QButtonGroup, QGridLayout, QLabel, QProgressBar,
+                             QPushButton, QRadioButton, QVBoxLayout, QWidget)
 
 from kontrol.utils.asynch import AsyncTaskSupervisor
 from kontrol.utils.dbus import SystemBus
+from kontrol.utils.qt.dialog import AsyncDialog
 from kontrol.utils.qt.signals import connect
 
 logging.basicConfig(
@@ -31,14 +28,7 @@ logging.basicConfig(
 
 
 def main():
-    app = QApplication(sys.argv)
-    app.setDesktopFileName("qkvox")
-
-    asyncio.run(run(), loop_factory=QEventLoop)
-
-
-async def run():
-    await MenuDialog().run()
+    Dialog.exec()
 
 
 def multi_command(*commands: list[list[str]]) -> Iterator[bytes]:
@@ -451,7 +441,9 @@ class AudioOutput(QDataclass):
         return self._label < o._label
 
 
-class MenuDialog(QWidget):
+class Dialog(AsyncDialog):
+    desktop_filename = "qkvox"
+
     KEY_QUIT = "Q"
     KEY_ENABLE_BT = "B"
 
@@ -490,20 +482,7 @@ class MenuDialog(QWidget):
         self.top_layout.addWidget(self.bt_activate_button)
         self.top_layout.addWidget(self.loader)
 
-        self._done = asyncio.Event()
-
-    async def run(self):
-        asyncio.get_running_loop().add_signal_handler(SIGINT, self._done.set)
-
-        try:
-            await self._start_services()
-            self.keymap.bind(self._done.set, self.KEY_QUIT, force=True)
-            self.show()
-            await self._done.wait()
-        finally:
-            await self._cleanup()
-
-    async def _start_services(self):
+    async def setup(self):
         self.sink_mgr.on_sinks_changed = self.on_sinks_changed
         self.sink_mgr.start()
 
@@ -511,7 +490,9 @@ class MenuDialog(QWidget):
         self.bt_mgr.on_adapter_state_change = self.on_bt_state_change
         await self.bt_mgr.start()
 
-    async def _cleanup(self):
+        self.keymap.bind(self.quit, self.KEY_QUIT, force=True)
+
+    async def cleanup(self):
         logging.debug("Cleanup...")
 
         self.sink_mgr.stop()
@@ -683,11 +664,6 @@ class MenuDialog(QWidget):
                 return True
 
         return False
-
-    def closeEvent(self, ev):
-        logging.debug(f"CloseEvent: {ev}")
-        ev.accept()
-        self._done.set()
 
 
 if __name__ == "__main__":

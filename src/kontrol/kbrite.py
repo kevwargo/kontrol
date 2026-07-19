@@ -1,18 +1,14 @@
-import asyncio
 import logging
 import os
-import sys
 from dataclasses import dataclass
-from signal import SIGINT
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
-from PyQt6.QtWidgets import (QApplication, QGridLayout, QLabel, QPushButton,
-                             QSlider, QWidget)
-from qasync import QEventLoop
+from PyQt6.QtWidgets import QGridLayout, QLabel, QPushButton, QSlider, QWidget
 
 from kontrol.utils.asynch import AsyncTaskSupervisor
 from kontrol.utils.dbus import SessionBus
+from kontrol.utils.qt.dialog import AsyncDialog
 from kontrol.utils.qt.signals import connect
 
 DBUS_NAME = "org.kde.ScreenBrightness"
@@ -27,17 +23,12 @@ logging.basicConfig(
 
 
 def main():
-    app = QApplication(sys.argv)
-    app.setDesktopFileName("kbrite")
-
-    asyncio.run(run(), loop_factory=QEventLoop)
+    Dialog.exec()
 
 
-async def run():
-    await Menu().run()
+class Dialog(AsyncDialog, AsyncTaskSupervisor):
+    desktop_filename = "kbrite"
 
-
-class Menu(QWidget, AsyncTaskSupervisor):
     _delta_keys = [
         ("PgUp", "PgDown"),
         ("Left", "Right"),
@@ -48,7 +39,6 @@ class Menu(QWidget, AsyncTaskSupervisor):
         super().__init__()
 
         self._manager = DisplayManager()
-        self._done = asyncio.Event()
         self._layout = QGridLayout(self)
         self._displays: dict[str, UIDisplay] = {}
         self._shortcuts: list[QShortcut] = []
@@ -57,17 +47,7 @@ class Menu(QWidget, AsyncTaskSupervisor):
         self.setWindowFlag(Qt.WindowType.Dialog)
         self.setWindowIcon(QIcon.fromTheme("video-display-brightness"))
 
-    async def run(self):
-        try:
-            await self._setup()
-            self.show()
-            await self._done.wait()
-        finally:
-            await self.cleanup()
-
-    async def _setup(self):
-        asyncio.get_running_loop().add_signal_handler(SIGINT, self._done.set)
-
+    async def setup(self):
         for name in await self._manager.display_names():
             await self._handle_display_added(name)
 
@@ -76,7 +56,8 @@ class Menu(QWidget, AsyncTaskSupervisor):
         await self._manager.on_brightness_changed(self._handle_brightness_changed)
 
         quit_shortcut = QShortcut(QKeySequence("Q"), self)
-        connect(quit_shortcut.activated, self._done.set)
+        quit_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        connect(quit_shortcut.activated, self.quit)
 
     async def _handle_display_added(self, name: str):
         if name in self._displays:
@@ -125,11 +106,6 @@ class Menu(QWidget, AsyncTaskSupervisor):
         )
         if display := self._displays.get(name):
             display.control.set_brightness(val)
-
-    def closeEvent(self, ev):
-        logging.debug(f"CloseEvent: {ev}")
-        ev.accept()
-        self._done.set()
 
 
 class DisplayManager:
