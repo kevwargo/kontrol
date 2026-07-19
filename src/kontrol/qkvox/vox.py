@@ -16,7 +16,7 @@ from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QButtonGroup, QGridLayout, QLabel, QProgressBar,
                              QPushButton, QRadioButton, QVBoxLayout, QWidget)
 
-from kontrol.utils.asynch import AsyncTaskSupervisor
+from kontrol.utils.asynch import AsyncTaskWatcher
 from kontrol.utils.dbus import SystemBus
 from kontrol.utils.qt.dialog import AsyncDialog
 from kontrol.utils.qt.signals import connect
@@ -151,12 +151,12 @@ class BTDevice(QObject, QDataclass):
         return self.mac.replace(":", "_").upper() in sink.name.upper()
 
 
-class BTManager(AsyncTaskSupervisor):
+class BTManager:
     BUS_NAME = "org.bluez"
     DEVICE_IFACE = "org.bluez.Device1"
     ADAPTER_IFACE = "org.bluez.Adapter1"
 
-    def __init__(self, bus: SystemBus):
+    def __init__(self, bus: SystemBus, tw: AsyncTaskWatcher):
         super().__init__()
 
         self.bus = bus
@@ -167,15 +167,15 @@ class BTManager(AsyncTaskSupervisor):
         self._adapter_path: str | None = None
         self._adapter_ready = asyncio.Event()
 
-        self._tasks: set[asyncio.Task] = set()
+        self._tw = tw
 
     async def start(self):
         root_intro = await self.bus.introspect(self.BUS_NAME, "/")
         manager = self.bus.get_proxy_object(self.BUS_NAME, "/", root_intro).get_interface(
             "org.freedesktop.DBus.ObjectManager"
         )
-        manager.on_interfaces_added(self.as_task(self.iface_added))
-        manager.on_interfaces_removed(self.as_task(self.iface_removed))
+        manager.on_interfaces_added(self._tw.as_task(self.iface_added))
+        manager.on_interfaces_removed(self._tw.as_task(self.iface_removed))
 
         objects = await manager.call_get_managed_objects()
         for path, obj_ifaces in objects.items():
@@ -460,7 +460,8 @@ class Dialog(AsyncDialog):
 
         self.sink_mgr = SinkManager(self)
         self.sysbus = SystemBus()
-        self.bt_mgr = BTManager(self.sysbus)
+        self._tw = AsyncTaskWatcher()
+        self.bt_mgr = BTManager(self.sysbus, self._tw)
 
         self._output_activation_task: asyncio.Task | None = None
         self._esc_shortcut = QShortcut(QKeySequence("ESC"), self)
@@ -498,8 +499,7 @@ class Dialog(AsyncDialog):
         self.sink_mgr.stop()
         self._cancel_output_activation_request()
 
-        if self.bt_mgr:
-            await self.bt_mgr.cleanup()
+        self._tw.cleanup()
 
         if self.sysbus:
             self.sysbus.disconnect()

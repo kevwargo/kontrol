@@ -3,9 +3,8 @@ import logging
 from functools import wraps
 
 
-class AsyncTaskSupervisor:
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class AsyncTaskWatcher:
+    def __init__(self):
         self.__tasks: set[asyncio.Task] = set()
 
     def start_task(self, coro):

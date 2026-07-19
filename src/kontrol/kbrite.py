@@ -6,7 +6,7 @@ from PyQt6.QtCore import QObject, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import QGridLayout, QLabel, QPushButton, QSlider, QWidget
 
-from kontrol.utils.asynch import AsyncTaskSupervisor
+from kontrol.utils.asynch import AsyncTaskWatcher
 from kontrol.utils.dbus import SessionBus
 from kontrol.utils.qt.dialog import AsyncDialog
 from kontrol.utils.qt.signals import connect
@@ -26,7 +26,7 @@ def main():
     Dialog.exec()
 
 
-class Dialog(AsyncDialog, AsyncTaskSupervisor):
+class Dialog(AsyncDialog):
     desktop_filename = "kbrite"
 
     _delta_keys = [
@@ -39,6 +39,7 @@ class Dialog(AsyncDialog, AsyncTaskSupervisor):
         super().__init__()
 
         self._manager = DisplayManager()
+        self._tw = AsyncTaskWatcher()
         self._layout = QGridLayout(self)
         self._displays: dict[str, UIDisplay] = {}
         self._shortcuts: list[QShortcut] = []
@@ -51,7 +52,7 @@ class Dialog(AsyncDialog, AsyncTaskSupervisor):
         for name in await self._manager.display_names():
             await self._handle_display_added(name)
 
-        await self._manager.on_display_added(self.as_task(self._handle_display_added))
+        await self._manager.on_display_added(self._tw.as_task(self._handle_display_added))
         await self._manager.on_display_removed(self._handle_display_removed)
         await self._manager.on_brightness_changed(self._handle_brightness_changed)
 
@@ -59,13 +60,17 @@ class Dialog(AsyncDialog, AsyncTaskSupervisor):
         quit_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         connect(quit_shortcut.activated, self.quit)
 
+    async def cleanup(self):
+        await self._tw.cleanup()
+
     async def _handle_display_added(self, name: str):
         if name in self._displays:
             self._handle_display_removed(name)
 
         display = UIDisplay(self._layout, await self._manager.get_display(name))
         connect(
-            display.control.value_changed, self.as_task(self._set_brightness, display_name=name)
+            display.control.value_changed,
+            self._tw.as_task(self._set_brightness, display_name=name),
         )
         self._displays[name] = display
         self._refresh_layout()
