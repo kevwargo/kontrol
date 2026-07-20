@@ -5,7 +5,11 @@ from typing import Callable
 from PyQt6.QtCore import pyqtBoundSignal
 
 
-def connect(sig: pyqtBoundSignal, slot: Callable):
+def safe_connect(sig: pyqtBoundSignal, slot: Callable):
+    """Wraps the slot before passing it to the signal's .connect() method
+    in order to avoid process crash if slot raises an exception.
+    """
+
     @wraps(slot)
     def wrapped(*args, **kwargs):
         try:

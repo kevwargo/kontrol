@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (QButtonGroup, QGridLayout, QLabel, QProgressBar,
 from kontrol.utils.asynch import AsyncTaskWatcher
 from kontrol.utils.dbus import SystemBus
 from kontrol.utils.qt.dialog import AsyncDialog
-from kontrol.utils.qt.signals import connect
+from kontrol.utils.qt.signals import safe_connect
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", logging.INFO),
@@ -127,7 +127,7 @@ class QDataclass:
                 self._props_changed_timer = QTimer(self)
                 self._props_changed_timer.setInterval(20)
                 self._props_changed_timer.setSingleShot(True)
-                connect(self._props_changed_timer.timeout, self.props_changed.emit)
+                safe_connect(self._props_changed_timer.timeout, self.props_changed.emit)
 
         cls.__init__ = wrapped
 
@@ -266,12 +266,12 @@ class SinkManager(QObject):
         self.watcher = QProcess(self)
         self.watcher.setProgram("pactl")
         self.watcher.setArguments(["subscribe"])
-        connect(self.watcher.readyReadStandardOutput, self._on_pactl_event)
+        safe_connect(self.watcher.readyReadStandardOutput, self._on_pactl_event)
 
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(50)
-        connect(self.timer.timeout, self._update_sinks)
+        safe_connect(self.timer.timeout, self._update_sinks)
 
         self._last_sinks: dict[str, Sink] = {}
         self._last_default: str | None = None
@@ -355,7 +355,7 @@ class Keymap:
         s = self._shortcuts[key] = QShortcut(QKeySequence(key), self._parent)
         logging.debug(f"Binding {key!r} to {action}: {s}")
         s.setContext(Qt.ShortcutContext.WindowShortcut)
-        connect(s.activated, action)
+        safe_connect(s.activated, action)
 
 
 class AudioOutput(QDataclass):
@@ -374,7 +374,7 @@ class AudioOutput(QDataclass):
         self.button = QRadioButton(self._label, parent)
 
         if self.bt_dev:
-            connect(self.bt_dev.props_changed, self._update_label)
+            safe_connect(self.bt_dev.props_changed, self._update_label)
             logging.info(f"Connected initial bt_dev.props_changed to {self}._update_label")
 
     def deleteLater(self):
@@ -412,7 +412,7 @@ class AudioOutput(QDataclass):
     def _set_bt_dev(self, bt_dev: BTDevice):
         if bt_dev:
             self._update_label()
-            connect(bt_dev.props_changed, self._update_label)
+            safe_connect(bt_dev.props_changed, self._update_label)
             logging.info(f"Set bt_dev for {self} and connected props_changed")
 
     def _set_shortcut(self, shortcut: str | None):
@@ -467,11 +467,11 @@ class Dialog(AsyncDialog):
         self._esc_shortcut = QShortcut(QKeySequence("ESC"), self)
         self._esc_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self._esc_shortcut.setEnabled(False)
-        connect(self._esc_shortcut.activated, self._cancel_output_activation_request)
+        safe_connect(self._esc_shortcut.activated, self._cancel_output_activation_request)
 
         self.top_layout = QVBoxLayout(self)
         self.bt_activate_button = QPushButton(f"Enable BT ({self.KEY_ENABLE_BT})", self)
-        connect(self.bt_activate_button.clicked, self.activate_bt)
+        safe_connect(self.bt_activate_button.clicked, self.activate_bt)
         self.show_bt_button()
         self.loader = QProgressBar(self)
         self.loader.setRange(0, 0)

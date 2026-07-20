@@ -1,6 +1,6 @@
 # General
 
-- Use `AsyncTaskSupervisor` as a standalone object, don't inherit from it
+- Simplify build process - build the wheel instead of a source tarball in Makefile
 
 # KWinCTL
 

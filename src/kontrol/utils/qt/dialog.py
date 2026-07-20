@@ -15,7 +15,7 @@ class AsyncDialog(QWidget):
         if cls.desktop_filename:
             app.setDesktopFileName(cls.desktop_filename)
 
-        asyncio.run(cls._exec_async(), loop_factory=QEventLoop)
+        asyncio.run(cls.__exec_async(), loop_factory=QEventLoop)
 
     def __init__(self):
         super().__init__()
@@ -32,7 +32,11 @@ class AsyncDialog(QWidget):
         self.__done.set()
 
     @classmethod
-    async def _exec_async(cls):
+    async def __exec_async(cls):
+        """Instantiate the dialog, start and wait for it to finish its job.
+        It's done in this helpers because subclass often initialize a dbus_next.io.MessageBus
+        which needs a running event loop.
+        """
         await cls()._run()
 
     async def _run(self):

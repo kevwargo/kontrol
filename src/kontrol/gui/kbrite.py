@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import QGridLayout, QLabel, QPushButton, QSlider, QWidget
 from kontrol.utils.asynch import AsyncTaskWatcher
 from kontrol.utils.dbus import SessionBus
 from kontrol.utils.qt.dialog import AsyncDialog
-from kontrol.utils.qt.signals import connect
+from kontrol.utils.qt.signals import safe_connect
 
 DBUS_NAME = "org.kde.ScreenBrightness"
 DBUS_BASE_PATH = "/org/kde/ScreenBrightness"
@@ -58,7 +58,7 @@ class Dialog(AsyncDialog):
 
         quit_shortcut = QShortcut(QKeySequence("Q"), self)
         quit_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
-        connect(quit_shortcut.activated, self.quit)
+        safe_connect(quit_shortcut.activated, self.quit)
 
     async def cleanup(self):
         await self._tw.cleanup()
@@ -68,7 +68,7 @@ class Dialog(AsyncDialog):
             self._handle_display_removed(name)
 
         display = UIDisplay(self._layout, await self._manager.get_display(name))
-        connect(
+        safe_connect(
             display.control.value_changed,
             self._tw.as_task(self._set_brightness, display_name=name),
         )
@@ -191,15 +191,15 @@ class UIDisplayControl(QWidget):
         self._slider.setMaximum(maxval)
         self._slider.setValue(val)
         self._slider.setMinimumWidth(200)
-        connect(self._slider.sliderReleased, self.on_move)
-        connect(self._slider.valueChanged, self._update_label)
+        safe_connect(self._slider.sliderReleased, self.on_move)
+        safe_connect(self._slider.valueChanged, self._update_label)
 
         self._val_label = QLabel(self)
 
         self._button_inc = QPushButton("+10%", self)
         self._button_dec = QPushButton("-10%", self)
-        connect(self._button_dec.clicked, self._button_handler(-10))
-        connect(self._button_inc.clicked, self._button_handler(10))
+        safe_connect(self._button_dec.clicked, self._button_handler(-10))
+        safe_connect(self._button_inc.clicked, self._button_handler(10))
         for but in (self._button_dec, self._button_inc):
             but.setStyleSheet("padding: 5px;")
 
@@ -223,9 +223,9 @@ class UIDisplayControl(QWidget):
 
     def set_shortcuts(self, dec_sc: QShortcut, inc_sc: QShortcut):
         self._button_dec.setText(f"[{dec_sc.key().toString()}]")
-        connect(dec_sc.activated, self._button_dec.animateClick)
+        safe_connect(dec_sc.activated, self._button_dec.animateClick)
         self._button_inc.setText(f"[{inc_sc.key().toString()}]")
-        connect(inc_sc.activated, self._button_inc.animateClick)
+        safe_connect(inc_sc.activated, self._button_inc.animateClick)
 
     def _button_handler(self, delta_percent: int):
         def clicked(checked=False):
