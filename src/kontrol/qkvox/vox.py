@@ -499,7 +499,7 @@ class Dialog(AsyncDialog):
         self.sink_mgr.stop()
         self._cancel_output_activation_request()
 
-        self._tw.cleanup()
+        await self._tw.cleanup()
 
         if self.sysbus:
             self.sysbus.disconnect()

@@ -1,6 +1,6 @@
 [project]
 name = "kontrol"
-version = "0.6.2"
+version = "0.6.3"
 description = "A set of tools to configure Plasma 6 (Wayland) in a predictable way"
 requires-python = ">=3.13"
 dependencies = [
