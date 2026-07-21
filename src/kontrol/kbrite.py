@@ -94,12 +94,11 @@ class Dialog(AsyncDialog):
 
         for row, display in enumerate(self._displays.values()):
             if row < len(self._delta_keys):
-                dec_sc, inc_sc = map(
-                    lambda k: QShortcut(QKeySequence(k), self), self._delta_keys[row]
-                )
+                dec_sc = QShortcut(QKeySequence(self._delta_keys[row][0]), self)
+                inc_sc = QShortcut(QKeySequence(self._delta_keys[row][1]), self)
                 dec_sc.setContext(Qt.ShortcutContext.WindowShortcut)
                 inc_sc.setContext(Qt.ShortcutContext.WindowShortcut)
-                self._shortcuts.extend((dec_sc, inc_sc))
+                self._shortcuts.extend([dec_sc, inc_sc])
                 display.control.set_shortcuts(dec_sc, inc_sc)
 
             display.add_to_grid(row)
