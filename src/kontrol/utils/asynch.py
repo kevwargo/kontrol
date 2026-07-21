@@ -7,10 +7,12 @@ class AsyncTaskWatcher:
     def __init__(self):
         self.__tasks: set[asyncio.Task] = set()
 
-    def start_task(self, coro):
+    def start_task(self, coro) -> asyncio.Task:
         task = asyncio.create_task(coro)
         self.__tasks.add(task)
         task.add_done_callback(self.__task_done)
+
+        return task
 
     def as_task(self, fn, **kwargs):
         @wraps(fn)
