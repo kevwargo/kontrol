@@ -1,6 +1,7 @@
 # General
 
 - Simplify build process - build the wheel instead of a source tarball in Makefile
+- Change all `asyncio.create_task`s to `AsyncTaskWatcher.start_task`
 
 ## Bugs
 

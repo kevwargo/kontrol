@@ -1,6 +1,6 @@
 [project]
 name = "kontrol"
-version = "0.6.4"
+version = "0.7.0"
 description = "A set of tools to configure Plasma 6 (Wayland) in a predictable way"
 requires-python = ">=3.13"
 dependencies = [
@@ -18,6 +18,7 @@ kwinjs         = "kontrol.cli.kwinctl.kwinjs_eval:main"
 kscreen-toggle = "kontrol.cli.kscreen_toggle:main"
 kbrite         = "kontrol.gui.kbrite:main"
 qkvox          = "kontrol.gui.qkvox:main"
+quick-wg       = "kontrol.gui.quick_wg:main"
 
 [build-system]
 requires = ["hatchling"]

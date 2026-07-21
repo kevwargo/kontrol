@@ -5,7 +5,7 @@ import os
 import sys
 from collections.abc import Callable
 from functools import partial
-from subprocess import PIPE, check_output
+from subprocess import PIPE, CalledProcessError
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
@@ -14,8 +14,7 @@ from PyQt6.QtWidgets import QGridLayout
 from kontrol.utils import nm
 from kontrol.utils.asynch import AsyncTaskWatcher
 from kontrol.utils.dbus import SystemBus
-from kontrol.utils.qt.dialog import (ActionButtonGroup, AsyncDialog,
-                                     AsyncRadioButton, Keymap)
+from kontrol.utils.qt.dialog import ActionButtonGroup, AsyncDialog, Keymap
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", logging.INFO),
@@ -28,28 +27,17 @@ def main():
 
 
 class Dialog(AsyncDialog):
+    desktop_filename = "quick-wg"
+
     def __init__(self):
         super().__init__()
 
-        self.buttons: dict[str, AsyncRadioButton] = {}
         self.activation_events: dict[str, asyncio.Event] = {}
         self.deactivation_events: dict[str, asyncio.Event] = {}
 
         self.tw = AsyncTaskWatcher()
         self.netmgr = NetworkManager(self.tw)
-        self.available_vpns = sorted(
-            f.removesuffix(".conf")
-            for f in check_output(["sudo", "ls", "/etc/wireguard"], text=True).strip().split()
-        )
 
-        self.init_keymap()
-        self.init_layout()
-
-        self.setWindowTitle("Wireguard VPNs")
-        self.setWindowFlag(Qt.WindowType.Dialog)
-        self.setWindowIcon(QIcon.fromTheme("network-vpn"))
-
-    def init_keymap(self):
         self.keymap = Keymap(
             self,
             [
@@ -62,59 +50,65 @@ class Dialog(AsyncDialog):
         self.keymap.bind("Q", self.quit)
         self.keymap.bind("Escape", self.quit)
 
-    def init_layout(self):
         self.layout = QGridLayout(self)
         self.rb_group = ActionButtonGroup(self, self.tw)
 
-        columns = 5 if len(sys.argv) <= 1 else int(sys.argv[1])
-        rows = math.ceil(len(self.available_vpns) / columns)
+        self.setWindowTitle("Wireguard VPNs")
+        self.setWindowFlag(Qt.WindowType.Dialog)
+        self.setWindowIcon(QIcon.fromTheme("network-vpn"))
 
-        for idx, vpn_name in enumerate(self.available_vpns):
-            if not (key := self.keymap.next_free_key()):
-                raise ValueError(f"Too many VPN configs: {len(self.available_vpns)}")
+    async def setup(self):
+        active_vpns, available_vpns = await asyncio.gather(
+            self.netmgr.initialize_vpns(self.dev_state_changed),
+            self.list_available_vpns(),
+        )
+        logging.info(f"VPNs: active:{active_vpns} available:{available_vpns}")
+
+        columns = 5 if len(sys.argv) <= 1 else int(sys.argv[1])
+        rows = math.ceil(len(available_vpns) / columns)
+
+        for idx, vpn_name in enumerate(available_vpns):
+            key = self.keymap.next_free_key()
+            button_label = f"{vpn_name} [{key}]" if key else vpn_name
 
             rb = self.rb_group.create_button(
-                f"{vpn_name} [{key}]",
+                button_label,
                 self,
+                init_state=vpn_name in active_vpns,
                 activate=partial(self.activate_vpn, vpn_name),
                 deactivate=partial(self.deactivate_vpn, vpn_name),
             )
 
-            self.buttons[vpn_name] = rb
-            self.keymap.bind(key, rb.animateClick)
             self.layout.addWidget(rb, idx % rows, idx // rows)
 
-    async def setup(self):
-        await self.sync_vpns()
-        await self.netmgr.watch_devices(self.dev_state_changed)
+            if key:
+                self.keymap.bind(key, rb.animateClick)
 
-    async def sync_vpns(self):
-        active_vpns = await self.netmgr.list_vpns()
-        logging.info(f"Active VPNs: {active_vpns}")
-        for vpn in active_vpns:
-            if rb := self.buttons.get(vpn):
-                rb.setChecked(True)
+    @staticmethod
+    async def list_available_vpns() -> list[str]:
+        cmd = ["sudo", "ls", "/etc/wireguard"]
+        p = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=PIPE)
+        out, err = await p.communicate()
+        if p.returncode != 0:
+            raise CalledProcessError(p.returncode, cmd, stderr=err)
+
+        return sorted(f.removesuffix(".conf") for f in out.decode().strip().split())
 
     def dev_state_changed(self, name, old: str | int | None, new: str | int, reason: str | int):
         if new == "ACTIVATED":
-            logging.info(f"Device {name} activated")
             if event := self.activation_events.get(name):
                 logging.info(f"Device {name} activated, notifying {event}")
                 event.set()
-            else:
-                logging.warning(f"Device {name} activated but nothing listens")
         elif (old, new) == ("ACTIVATED", "UNMANAGED"):
             if event := self.deactivation_events.get(name):
                 logging.info(f"Device {name} de-activated, notifying {event}")
                 event.set()
-            else:
-                logging.warning(f"Device {name} de-activated but nothing listens")
         else:
             logging.debug(f"Device {name} {old} -> {new} reason:{reason}")
 
     async def activate_vpn(self, name: str) -> bool:
         event = self.activation_events[name] = asyncio.Event()
-        logging.info(f"Registered activation event {event} for {name}")
+        logging.info(f"Activating {name} and waiting on {event}")
 
         if res := await self.run_wg_quick(name, True):
             await event.wait()
@@ -126,7 +120,7 @@ class Dialog(AsyncDialog):
 
     async def deactivate_vpn(self, name: str):
         event = self.deactivation_events[name] = asyncio.Event()
-        logging.info(f"Registered de-activation event {event} for {name}")
+        logging.info(f"De-activating {name} and waiting on {event}")
 
         if await self.run_wg_quick(name, False):
             await event.wait()
@@ -140,7 +134,7 @@ class Dialog(AsyncDialog):
         p = await asyncio.create_subprocess_exec(*args, stdout=PIPE, stderr=PIPE)
         out, err = await p.communicate()
 
-        output = "\n".join(stream.decode().strip() for stream in (out, err))
+        output = "\n".join(stream.decode() for stream in (out, err)).strip()
 
         res = p.returncode == 0
         (logging.info if res else logging.error)(f"Command {args}:\n{output}")
@@ -162,30 +156,31 @@ class NetworkManager:
         self._bus = SystemBus()
         self._tw = tw
 
-    async def list_vpns(self) -> list[str]:
-        iface = await self._bus.iface(self.SERVICE, self.BASE_PATH, self.SERVICE)
-        devices = await iface.call_get_devices()
+    async def initialize_vpns(self, dev_state_changed: T_DEV_STATE_HANDLER) -> set[str]:
+        base_iface = await self._bus.iface(self.SERVICE, self.BASE_PATH, self.SERVICE)
 
-        vpn_devices = []
+        devices = await base_iface.call_get_devices()
+
+        active_vpns = set()
         for path in devices:
             dev_iface = await self._bus.iface(self.SERVICE, path, f"{self.SERVICE}.Device")
-            driver = await dev_iface.get_driver()
-            if driver == "wireguard":
-                vpn_devices.append(await dev_iface.get_interface())
+            type_code = await dev_iface.get_device_type()
+            if nm.DEVICE_TYPES.get(type_code) == "WIREGUARD":
+                active_vpns.add(await dev_iface.get_interface())
+                await self._added(path, dev_state_changed, dev_iface)
 
-        return vpn_devices
-
-    async def watch_devices(self, dev_state_changed: T_DEV_STATE_HANDLER):
-        iface = await self._bus.iface(self.SERVICE, self.BASE_PATH, self.SERVICE)
-        iface.on_device_added(
+        base_iface.on_device_added(
             lambda path: self._tw.start_task(self._added(path, dev_state_changed))
         )
-        iface.on_device_removed(lambda path: logging.debug(f"NM: removed {path}"))
+        base_iface.on_device_removed(lambda path: logging.debug(f"NM: removed {path}"))
 
-    async def _added(self, path: str, dev_state_changed: T_DEV_STATE_HANDLER):
+        return active_vpns
+
+    async def _added(self, path: str, dev_state_changed: T_DEV_STATE_HANDLER, iface=None):
         logging.debug(f"NM: added {path}")
 
-        iface = await self._bus.iface(self.SERVICE, path, f"{self.SERVICE}.Device")
+        if iface is None:
+            iface = await self._bus.iface(self.SERVICE, path, f"{self.SERVICE}.Device")
 
         dev_type_code = await iface.get_device_type()
         if not (dev_type := nm.DEVICE_TYPES.get(dev_type_code)):

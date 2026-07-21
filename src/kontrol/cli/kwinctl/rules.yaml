@@ -67,3 +67,8 @@ kbrite:
   cls: kbrite
   command: kbrite
   auto: true
+quick-wg:
+  key: Meta+Shift+N
+  cls: quick-wg
+  command: quick-wg
+  auto: true

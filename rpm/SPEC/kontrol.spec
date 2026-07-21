@@ -53,6 +53,7 @@ install -Dm644 src/kontrol/cli/kwinctl/overrides.yaml %{buildroot}/usr/share/kwi
 %{_bindir}/kwinctl
 %{_bindir}/kwinjs
 %{_bindir}/qkvox
+%{_bindir}/quick-wg
 
 /usr/share/kwinctl/kwinctl.js
 /usr/share/kwinctl/rules.yaml

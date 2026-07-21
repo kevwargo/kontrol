@@ -2,7 +2,6 @@ import asyncio
 import logging
 import sys
 from collections.abc import Awaitable, Callable
-from functools import wraps
 from signal import SIGINT
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
@@ -94,7 +93,7 @@ class AsyncRadioButton(QRadioButton):
         self,
         *args,
         activate: Callable[[], Awaitable[bool]],
-        deactivate: Callable[[], Awaitable[bool]],
+        deactivate: Callable[[], Awaitable[None]],
     ):
         super().__init__(*args)
         self.activate_fn = activate
@@ -123,12 +122,22 @@ class ActionButtonGroup(QButtonGroup):
     def create_button(
         self,
         *args,
+        init_state: bool,
         activate: Callable[[], Awaitable[bool]],
-        deactivate: Callable[[], Awaitable[bool]],
+        deactivate: Callable[[], Awaitable[None]],
     ) -> AsyncRadioButton:
+        if init_state and self._active:
+            raise ValueError(f"{self._active} is checked, cannot create {args} as checked")
+
         rb = AsyncRadioButton(*args, activate=activate, deactivate=deactivate)
         self.addButton(rb)
         safe_connect(rb.activation_requested, self._tw.as_task(self._handle_activation, button=rb))
+
+        if init_state:
+            logging.info(f"Setting {rb} as checked")
+            rb.setChecked(True)
+            self._active = rb
+
         return rb
 
     async def _handle_activation(self, button: AsyncRadioButton):
