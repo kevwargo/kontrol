@@ -60,7 +60,7 @@ class Dialog(AsyncDialog):
         self.grid = QGridLayout(box)
 
         self.rb_group = ActionButtonGroup(self, self.tw)
-        self.keymap.bind(self.KEY_DEACTIVATE, self.tw.as_task(self.rb_group.disable_active))
+        self.keymap.bind(self.KEY_DEACTIVATE, self.tw.as_task(self.rb_group.deactivate_all))
 
         self.setWindowTitle("Wireguard VPNs")
         self.setWindowFlag(Qt.WindowType.Dialog)

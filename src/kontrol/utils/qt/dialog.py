@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 from collections.abc import Awaitable, Callable
+from contextlib import contextmanager
 from signal import SIGINT
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
@@ -117,7 +118,7 @@ class ActionButtonGroup(QButtonGroup):
     def __init__(self, parent: QObject, task_watcher: AsyncTaskWatcher):
         super().__init__(parent)
         self._tw = task_watcher
-        self._active: AsyncRadioButton | None = None
+        self._active_buttons: set[AsyncRadioButton] = set()
 
     def create_button(
         self,
@@ -126,9 +127,6 @@ class ActionButtonGroup(QButtonGroup):
         activate: Callable[[], Awaitable[bool]],
         deactivate: Callable[[], Awaitable[None]],
     ) -> AsyncRadioButton:
-        if init_state and self._active:
-            raise ValueError(f"{self._active} is checked, cannot create {args} as checked")
-
         rb = AsyncRadioButton(*args, activate=activate, deactivate=deactivate)
         self.addButton(rb)
         safe_connect(rb.activation_requested, self._tw.as_task(self._handle_activation, button=rb))
@@ -136,53 +134,64 @@ class ActionButtonGroup(QButtonGroup):
 
         if init_state:
             logging.info(f"Setting {rb} as checked")
-            rb.setChecked(True)
-            self._active = rb
+            with self._inclusive():
+                rb.setChecked(True)
+                self._active_buttons.add(rb)
 
         return rb
 
-    async def disable_active(self):
-        if not self._active:
-            return
+    async def deactivate_all(self):
+        with self._buttons_disabled():
+            await self._deactivate_all()
 
+    @contextmanager
+    def _buttons_disabled(self):
         for b in self.buttons():
             b.setEnabled(False)
+        try:
+            yield
+        finally:
+            for b in self.buttons():
+                b.setEnabled(True)
 
-        await self._active.deactivate_fn()
-
+    @contextmanager
+    def _inclusive(self):
         self.setExclusive(False)
-        self._active.setChecked(False)
-        self._active = None
-        self.setExclusive(True)
-
-        for b in self.buttons():
-            b.setEnabled(True)
+        try:
+            yield
+        finally:
+            self.setExclusive(True)
 
     async def _handle_click(self, checked=False, *, button: AsyncRadioButton):
-        if checked and self._active == button:
+        if checked and button in self._active_buttons:
             logging.info(f"Clicked currently selected {button}, deactivating it")
-            await self.disable_active()
+            with self._buttons_disabled():
+                await self._deactivate_button(button)
+
+    async def _deactivate_button(self, button: AsyncRadioButton):
+        await button.deactivate_fn()
+
+        with self._inclusive():
+            button.setChecked(False)
+            self._active_buttons.discard(button)
+
+    async def _deactivate_all(self):
+        for b in list(self._active_buttons):
+            await self._deactivate_button(b)
 
     async def _handle_activation(self, button: AsyncRadioButton):
         logging.debug(f"Received activation request from {button}")
 
-        for b in self.buttons():
-            b.setEnabled(False)
+        with self._buttons_disabled():
+            await self._deactivate_all()
 
-        if self._active:
-            await self._active.deactivate_fn()
-            self._active = None
+            try:
+                res = await button.activate_fn()
+            except Exception:
+                logging.exception(f"Exception in <{button}>.activate()")
+                res = False
 
-        try:
-            res = await button.activate_fn()
-        except Exception:
-            logging.exception(f"Exception in <{button}>.activate()")
-            res = False
-
-        if res:
-            logging.debug(f"Checking {button}")
-            button.setChecked(True)
-            self._active = button
-
-        for b in self.buttons():
-            b.setEnabled(True)
+            if res:
+                logging.debug(f"Checking {button}")
+                button.setChecked(True)
+                self._active_buttons.add(button)
