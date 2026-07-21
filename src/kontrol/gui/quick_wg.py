@@ -9,7 +9,7 @@ from subprocess import PIPE, CalledProcessError
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QGridLayout
+from PyQt6.QtWidgets import QGridLayout, QGroupBox, QVBoxLayout
 
 from kontrol.utils import nm
 from kontrol.utils.asynch import AsyncTaskWatcher
@@ -29,6 +29,9 @@ def main():
 class Dialog(AsyncDialog):
     desktop_filename = "quick-wg"
 
+    KEYS_QUIT = ["Q", "Escape"]
+    KEY_DEACTIVATE = "Ctrl+X"
+
     def __init__(self):
         super().__init__()
 
@@ -47,11 +50,17 @@ class Dialog(AsyncDialog):
                 for c in map(chr, range(ord(r[0]), ord(r[1]) + 1))
             ],
         )
-        self.keymap.bind("Q", self.quit)
-        self.keymap.bind("Escape", self.quit)
 
-        self.layout = QGridLayout(self)
+        for k in self.KEYS_QUIT:
+            self.keymap.bind(k, self.quit)
+
+        self.setLayout(QVBoxLayout())
+        box = QGroupBox(f"{self.KEYS_QUIT} to quit, {self.KEY_DEACTIVATE!r} to deactivate all")
+        self.layout().addWidget(box)
+        self.grid = QGridLayout(box)
+
         self.rb_group = ActionButtonGroup(self, self.tw)
+        self.keymap.bind(self.KEY_DEACTIVATE, self.tw.as_task(self.rb_group.disable_active))
 
         self.setWindowTitle("Wireguard VPNs")
         self.setWindowFlag(Qt.WindowType.Dialog)
@@ -79,7 +88,7 @@ class Dialog(AsyncDialog):
                 deactivate=partial(self.deactivate_vpn, vpn_name),
             )
 
-            self.layout.addWidget(rb, idx % rows, idx // rows)
+            self.grid.addWidget(rb, idx % rows, idx // rows)
 
             if key:
                 self.keymap.bind(key, rb.animateClick)

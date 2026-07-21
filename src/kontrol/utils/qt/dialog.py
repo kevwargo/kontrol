@@ -132,6 +132,7 @@ class ActionButtonGroup(QButtonGroup):
         rb = AsyncRadioButton(*args, activate=activate, deactivate=deactivate)
         self.addButton(rb)
         safe_connect(rb.activation_requested, self._tw.as_task(self._handle_activation, button=rb))
+        safe_connect(rb.clicked, self._tw.as_task(self._handle_click, button=rb))
 
         if init_state:
             logging.info(f"Setting {rb} as checked")
@@ -139,6 +140,28 @@ class ActionButtonGroup(QButtonGroup):
             self._active = rb
 
         return rb
+
+    async def disable_active(self):
+        if not self._active:
+            return
+
+        for b in self.buttons():
+            b.setEnabled(False)
+
+        await self._active.deactivate_fn()
+
+        self.setExclusive(False)
+        self._active.setChecked(False)
+        self._active = None
+        self.setExclusive(True)
+
+        for b in self.buttons():
+            b.setEnabled(True)
+
+    async def _handle_click(self, checked=False, *, button: AsyncRadioButton):
+        if checked and self._active == button:
+            logging.info(f"Clicked currently selected {button}, deactivating it")
+            await self.disable_active()
 
     async def _handle_activation(self, button: AsyncRadioButton):
         logging.debug(f"Received activation request from {button}")
