@@ -2,6 +2,22 @@
 
 - Simplify build process - build the wheel instead of a source tarball in Makefile
 
+## Bugs
+
+- Wrap functions passed to as_task to exclude keyword args to avoid this
+```
+  File "~/kontrol/src/kontrol/utils/asynch.py", line 37, in __task_done
+    task.result()
+    ~~~~~~~~~~~^^
+  File "~/kontrol/src/kontrol/gui/qwg.py", line 157, in _added
+    iface.on_state_changed(self._tw.as_task(self._dev_state_changed, device_path=path))
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "~/kontrol/.venv/lib/python3.14/site-packages/dbus_next/proxy_object.py", line 109, in on_signal_fn
+    raise TypeError(
+        f'reply_notify must be a function with {len(intr_signal.args)} parameters')
+TypeError: reply_notify must be a function with 3 parameters
+```
+
 # KWinCTL
 
 ## Rules
