@@ -33,7 +33,8 @@ class AsyncDialog(QWidget):
     async def cleanup(self): ...
 
     def closeEvent(self, ev):
-        ev.accept()
+        ev.ignore()
+        self.hide()
         self.__done.set()
 
     def quit(self):

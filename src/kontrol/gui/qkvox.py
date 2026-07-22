@@ -614,7 +614,7 @@ class Dialog(AsyncDialog):
 
     def _request_activate_output(self, o: AudioOutput):
         self._cancel_output_activation_request()
-        self._output_activation_task = asyncio.create_task(self._activate_output(o))
+        self._output_activation_task = self._tw.start_task(self._activate_output(o))
 
     def _cancel_output_activation_request(self):
         if self._output_activation_task:
