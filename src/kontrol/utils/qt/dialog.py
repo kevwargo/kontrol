@@ -74,10 +74,9 @@ class Keymap:
         if shortcut := self._shortcuts.get(key):
             shortcut.deleteLater()
 
-        shortcut = QShortcut(QKeySequence(key), self._parent)
+        shortcut = self._shortcuts[key] = QShortcut(QKeySequence(key), self._parent)
         shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         safe_connect(shortcut.activated, lambda: self._call_action(key, action))
-        self._shortcuts[key] = shortcut
 
     def unbind_key(self, key: str):
         if shortcut := self._shortcuts.pop(key, None):
@@ -88,18 +87,18 @@ class Keymap:
         action()
 
 
-class AsyncRadioButton(QRadioButton):
+class _ActionRadioButton(QRadioButton):
     activation_requested = pyqtSignal()
 
     def __init__(
         self,
         *args,
-        activate: Callable[[], Awaitable[bool]],
-        deactivate: Callable[[], Awaitable[None]],
+        activate: Callable[[], Awaitable[bool]] | None,
+        deactivate: Callable[[], Awaitable[None]] | None,
     ):
         super().__init__(*args)
-        self.activate_fn = activate
-        self.deactivate_fn = deactivate
+        self.activate_fn = activate or self._noop_bool
+        self.deactivate_fn = deactivate or self._noop
 
     def nextCheckState(self):
         if self.isChecked():
@@ -114,21 +113,28 @@ class AsyncRadioButton(QRadioButton):
 
     __repr__ = __str__
 
+    @staticmethod
+    async def _noop(): ...
+
+    @staticmethod
+    async def _noop_bool():
+        return True
+
 
 class ActionButtonGroup(QButtonGroup):
     def __init__(self, parent: QObject, task_watcher: AsyncTaskWatcher):
         super().__init__(parent)
         self._tw = task_watcher
-        self._active_buttons: set[AsyncRadioButton] = set()
+        self._active_buttons: set[_ActionRadioButton] = set()
 
     def create_button(
         self,
         *args,
-        init_state: bool,
-        activate: Callable[[], Awaitable[bool]],
-        deactivate: Callable[[], Awaitable[None]],
-    ) -> AsyncRadioButton:
-        rb = AsyncRadioButton(*args, activate=activate, deactivate=deactivate)
+        init_state: bool = False,
+        activate: Callable[[], Awaitable[bool]] = None,
+        deactivate: Callable[[], Awaitable[None]] = None,
+    ) -> _ActionRadioButton:
+        rb = _ActionRadioButton(*args, activate=activate, deactivate=deactivate)
         self.addButton(rb)
         safe_connect(rb.activation_requested, self._tw.as_task(self._handle_activation, button=rb))
         safe_connect(rb.clicked, self._tw.as_task(self._handle_click, button=rb))
@@ -163,13 +169,13 @@ class ActionButtonGroup(QButtonGroup):
         finally:
             self.setExclusive(True)
 
-    async def _handle_click(self, checked=False, *, button: AsyncRadioButton):
+    async def _handle_click(self, checked=False, *, button: _ActionRadioButton):
         if checked and button in self._active_buttons:
             logging.info(f"Clicked currently selected {button}, deactivating it")
             with self._buttons_disabled():
                 await self._deactivate_button(button)
 
-    async def _deactivate_button(self, button: AsyncRadioButton):
+    async def _deactivate_button(self, button: _ActionRadioButton):
         await button.deactivate_fn()
 
         with self._inclusive():
@@ -180,7 +186,7 @@ class ActionButtonGroup(QButtonGroup):
         for b in list(self._active_buttons):
             await self._deactivate_button(b)
 
-    async def _handle_activation(self, button: AsyncRadioButton):
+    async def _handle_activation(self, button: _ActionRadioButton):
         logging.debug(f"Received activation request from {button}")
 
         with self._buttons_disabled():
