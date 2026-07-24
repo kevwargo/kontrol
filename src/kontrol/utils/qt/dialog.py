@@ -126,6 +126,7 @@ class ActionButtonGroup(QButtonGroup):
         super().__init__(parent)
         self._tw = task_watcher
         self._active_buttons: set[_ActionRadioButton] = set()
+        self._buttons_disabled_depth = 0
 
     def create_button(
         self,
@@ -148,18 +149,27 @@ class ActionButtonGroup(QButtonGroup):
         return rb
 
     async def deactivate_all(self):
-        with self._buttons_disabled():
+        with self.buttons_disabled():
             await self._deactivate_all()
 
-    @contextmanager
-    def _buttons_disabled(self):
+    def set_enabled(self, state: bool):
         for b in self.buttons():
-            b.setEnabled(False)
+            b.setEnabled(state)
+
+    @contextmanager
+    def buttons_disabled(self):
+        self._buttons_disabled_depth += 1
+        if self._buttons_disabled_depth == 1:
+            for b in self.buttons():
+                b.setEnabled(False)
+
         try:
             yield
         finally:
-            for b in self.buttons():
-                b.setEnabled(True)
+            self._buttons_disabled_depth -= 1
+            if self._buttons_disabled_depth == 0:
+                for b in self.buttons():
+                    b.setEnabled(True)
 
     @contextmanager
     def _inclusive(self):
@@ -172,7 +182,7 @@ class ActionButtonGroup(QButtonGroup):
     async def _handle_click(self, checked=False, *, button: _ActionRadioButton):
         if checked and button in self._active_buttons:
             logging.info(f"Clicked currently selected {button}, deactivating it")
-            with self._buttons_disabled():
+            with self.buttons_disabled():
                 await self._deactivate_button(button)
 
     async def _deactivate_button(self, button: _ActionRadioButton):
@@ -189,7 +199,7 @@ class ActionButtonGroup(QButtonGroup):
     async def _handle_activation(self, button: _ActionRadioButton):
         logging.debug(f"Received activation request from {button}")
 
-        with self._buttons_disabled():
+        with self.buttons_disabled():
             await self._deactivate_all()
 
             try:
