@@ -5,7 +5,7 @@
 
 ## Bugs
 
-- Wrap functions passed to as_task to exclude keyword args to avoid this
+- Wrap functions passed to `as_task` to exclude keyword args to avoid this
 ```
   File "~/kontrol/src/kontrol/utils/asynch.py", line 37, in __task_done
     task.result()
@@ -18,6 +18,11 @@
         f'reply_notify must be a function with {len(intr_signal.args)} parameters')
 TypeError: reply_notify must be a function with 3 parameters
 ```
+- Retry BT connection request when sth like this happens
+```
+2026-07-24 23:59:31,453 | [WARNING] Failed to connect to BTDev<C4:A9:B8:0C:C0:A2('JBL Vibe Beam 2') [OFF]>: br-connection-adapter-not-powered
+```
+
 
 # KWinCTL
 

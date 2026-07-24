@@ -79,8 +79,13 @@ class Keymap:
         safe_connect(shortcut.activated, lambda: self._call_action(key, action))
 
     def unbind_key(self, key: str):
-        if shortcut := self._shortcuts.pop(key, None):
+        logging.debug(f"Unbinding key {type(key).__name__}({key!r})")
+        if key not in self._shortcuts:
+            return
+
+        if shortcut := self._shortcuts[key]:
             shortcut.deleteLater()
+            self._shortcuts[key] = None
 
     def _call_action(self, key: str, action: Callable):
         logging.debug(f"Key {key!r} pressed, calling {action} ...")
