@@ -1,6 +1,6 @@
 Name: %{kontrol_name}
 Version: %{kontrol_version}
-Release: 1
+Release: %{kontrol_release}
 Summary: %{kontrol_description}
 License: MIT
 URL: https://github.com/kevwargo/kontrol

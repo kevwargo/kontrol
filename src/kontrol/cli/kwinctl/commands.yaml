@@ -44,3 +44,6 @@ dtt:
     cmd: date +%Y%m%d-%H%M%S
     notify:
       details: true
+restart-plasmashell:
+  key: Meta+Shift+Ctrl+K
+  shell: kquitapp6 plasmashell && kstart plasmashell
