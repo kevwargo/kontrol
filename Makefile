@@ -8,6 +8,7 @@ GEN_ENV_MK := ./scripts/gen-env-mk.py
 
 DISTDIR := dist
 export PKG_SOURCE_DIST := $(PKG_NAME)-src-$(PKG_VERSION).tar.zst
+export PKG_RELEASE := 1
 
 PACMAN_DIR := pacman
 
@@ -17,6 +18,7 @@ RPMBUILD_DEFINES := --define "_topdir $(RPMTOP)" \
 	--define "kontrol_name $(PKG_NAME)" \
 	--define "kontrol_version $(PKG_VERSION)" \
 	--define "kontrol_description $(PKG_DESCRIPTION)" \
+	--define "kontrol_release $(PKG_RELEASE)" \
 	--define "kontrol_src $(PKG_SOURCE_DIST)" \
 	--define "qasync_whl $(QASYNC_WHEEL_FILENAME)"
 
@@ -48,11 +50,15 @@ clean-pacman:
 	cd $(PACMAN_DIR) && rm -rf src pkg *.tar.zst
 
 ## RPM targets
-.PHONY: build-rpm
+.PHONY: build-rpm install-rpm
 
 build-rpm: dist-source $(RPM_DIR)/SOURCES/$(QASYNC_WHEEL_FILENAME)
 	cp $(DISTDIR)/$(PKG_SOURCE_DIST) $(RPM_DIR)/SOURCES/$(PKG_SOURCE_DIST)
 	rpmbuild $(RPMBUILD_DEFINES) --noclean --nodebuginfo -bb $(RPM_DIR)/SPEC/kontrol.spec
+
+install-rpm:
+	sudo dnf install -y --allow-downgrade \
+		$(RPM_DIR)/RPMS/noarch/$(PKG_NAME)-$(PKG_VERSION)-$(PKG_RELEASE).noarch.rpm
 
 $(RPM_DIR)/SOURCES/$(QASYNC_WHEEL_FILENAME):
 	mkdir -p $(RPM_DIR)/SOURCES

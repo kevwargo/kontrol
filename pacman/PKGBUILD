@@ -1,6 +1,6 @@
 pkgname=${PKG_NAME}
 pkgver=${PKG_VERSION}
-pkgrel=1
+pkgrel=${PKG_RELEASE}
 pkgdesc="${PKG_DESCRIPTION}"
 arch=(any)
 license=(MIT)
