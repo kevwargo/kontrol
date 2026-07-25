@@ -1,7 +1,5 @@
 import asyncio
-import logging
 import math
-import os
 import sys
 from collections.abc import Callable
 from functools import partial
@@ -14,12 +12,10 @@ from PyQt6.QtWidgets import QGridLayout, QGroupBox, QVBoxLayout
 from kontrol.utils import nm
 from kontrol.utils.asynch import AsyncTaskWatcher
 from kontrol.utils.dbus import SystemBus
+from kontrol.utils.log import get_logger
 from kontrol.utils.qt.dialog import ActionButtonGroup, AsyncDialog, Keymap
 
-logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", logging.INFO),
-    format="%(asctime)s | [%(levelname)s] %(message)s",
-)
+logger = get_logger("quick-wg")
 
 
 def main():
@@ -71,7 +67,7 @@ class Dialog(AsyncDialog):
             self.netmgr.initialize_vpns(self.dev_state_changed),
             self.list_available_vpns(),
         )
-        logging.info(f"VPNs: active:{active_vpns} available:{available_vpns}")
+        logger.info(f"VPNs: active:{active_vpns} available:{available_vpns}")
 
         columns = 5 if len(sys.argv) <= 1 else int(sys.argv[1])
         rows = math.ceil(len(available_vpns) / columns)
@@ -106,22 +102,22 @@ class Dialog(AsyncDialog):
     def dev_state_changed(self, name, old: str | int | None, new: str | int, reason: str | int):
         if new == "ACTIVATED":
             if event := self.activation_events.get(name):
-                logging.info(f"Device {name} activated, notifying {event}")
+                logger.info(f"Device {name} activated, notifying {event}")
                 event.set()
         elif (old, new) == ("ACTIVATED", "UNMANAGED"):
             if event := self.deactivation_events.get(name):
-                logging.info(f"Device {name} de-activated, notifying {event}")
+                logger.info(f"Device {name} de-activated, notifying {event}")
                 event.set()
         else:
-            logging.debug(f"Device {name} {old} -> {new} reason:{reason}")
+            logger.debug(f"Device {name} {old} -> {new} reason:{reason}")
 
     async def activate_vpn(self, name: str) -> bool:
         event = self.activation_events[name] = asyncio.Event()
-        logging.info(f"Activating {name} and waiting on {event}")
+        logger.info(f"Activating {name} and waiting on {event}")
 
         if res := await self.run_wg_quick(name, True):
             await event.wait()
-            logging.info(f"Success: {name} fully activated")
+            logger.info(f"Success: {name} fully activated")
 
         self.activation_events.pop(name, None)
 
@@ -129,11 +125,11 @@ class Dialog(AsyncDialog):
 
     async def deactivate_vpn(self, name: str):
         event = self.deactivation_events[name] = asyncio.Event()
-        logging.info(f"De-activating {name} and waiting on {event}")
+        logger.info(f"De-activating {name} and waiting on {event}")
 
         if await self.run_wg_quick(name, False):
             await event.wait()
-            logging.info(f"Success: {name} fully de-activated")
+            logger.info(f"Success: {name} fully de-activated")
 
         self.deactivation_events.pop(name, None)
 
@@ -146,7 +142,7 @@ class Dialog(AsyncDialog):
         output = "\n".join(stream.decode() for stream in (out, err)).strip()
 
         res = p.returncode == 0
-        (logging.info if res else logging.error)(f"Command {args}:\n{output}")
+        (logger.info if res else logger.error)(f"Command {args}:\n{output}")
 
         return res
 
@@ -181,21 +177,21 @@ class NetworkManager:
         base_iface.on_device_added(
             lambda path: self._tw.start_task(self._added(path, dev_state_changed))
         )
-        base_iface.on_device_removed(lambda path: logging.debug(f"NM: removed {path}"))
+        base_iface.on_device_removed(lambda path: logger.debug(f"NM: removed {path}"))
 
         return active_vpns
 
     async def _added(self, path: str, dev_state_changed: T_DEV_STATE_HANDLER, iface=None):
-        logging.debug(f"NM: added {path}")
+        logger.debug(f"NM: added {path}")
 
         if iface is None:
             iface = await self._bus.iface(self.SERVICE, path, f"{self.SERVICE}.Device")
 
         dev_type_code = await iface.get_device_type()
         if not (dev_type := nm.DEVICE_TYPES.get(dev_type_code)):
-            logging.warning(f"NM: {path} type code {dev_type_code} is not registered")
+            logger.warning(f"NM: {path} type code {dev_type_code} is not registered")
         elif dev_type != "WIREGUARD":
-            logging.debug(f"NM: ignoring {dev_type} {path}")
+            logger.debug(f"NM: ignoring {dev_type} {path}")
         else:
             name, (state_code, reason_code) = await asyncio.gather(
                 iface.get_interface(), iface.get_state_reason()
@@ -203,7 +199,7 @@ class NetworkManager:
             state = nm.DEVICE_STATES.get(state_code, state_code)
             reason = nm.DEVICE_STATE_REASONS.get(reason_code, reason_code)
 
-            logging.info(f"NM: watching {path} ({name} {state} {reason})")
+            logger.info(f"NM: watching {path} ({name} {state} {reason})")
 
             dev_state_changed(name, None, state, reason)
             iface.on_state_changed(

@@ -1,5 +1,3 @@
-import logging
-import os
 from dataclasses import dataclass
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
@@ -8,18 +6,16 @@ from PyQt6.QtWidgets import QGridLayout, QLabel, QPushButton, QSlider, QWidget
 
 from kontrol.utils.asynch import AsyncTaskWatcher
 from kontrol.utils.dbus import SessionBus
+from kontrol.utils.log import get_logger
+from kontrol.utils.qt.core import safe_connect
 from kontrol.utils.qt.dialog import AsyncDialog
-from kontrol.utils.qt.signals import safe_connect
+
+logger = get_logger("kbrite")
 
 DBUS_NAME = "org.kde.ScreenBrightness"
 DBUS_BASE_PATH = "/org/kde/ScreenBrightness"
 DBUS_BASE_IFACE = DBUS_NAME
 DBUS_DISPLAY_IFACE = f"{DBUS_BASE_IFACE}.Display"
-
-logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", logging.INFO),
-    format="%(asctime)s | [%(levelname)s] %(message)s",
-)
 
 
 def main():
@@ -81,7 +77,7 @@ class Dialog(AsyncDialog):
             self._refresh_layout()
 
     async def _set_brightness(self, val: int, *, display_name: str):
-        logging.debug(f"Setting {display_name} -> {val}")
+        logger.debug(f"Setting {display_name} -> {val}")
         await self._manager.set_brightness(display_name, val)
 
     def _refresh_layout(self):
@@ -104,7 +100,7 @@ class Dialog(AsyncDialog):
             display.add_to_grid(row)
 
     def _handle_brightness_changed(self, name: str, val: int, client_name: str, client_ctx: str):
-        logging.debug(
+        logger.debug(
             f"Brightness update: {name!r} -> {val}"
             f" client_name:{client_name!r} client_ctx:{client_ctx!r}"
         )
@@ -217,7 +213,7 @@ class UIDisplayControl(QWidget):
         if val is None:
             val = self._slider.value()
 
-        logging.info(f"user changed: {val}")
+        logger.info(f"user changed: {val}")
         self.value_changed.emit(val)
 
     def set_shortcuts(self, dec_sc: QShortcut, inc_sc: QShortcut):

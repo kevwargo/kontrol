@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import sys
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
@@ -11,7 +10,10 @@ from PyQt6.QtWidgets import QApplication, QButtonGroup, QRadioButton, QWidget
 from qasync import QEventLoop
 
 from kontrol.utils.asynch import AsyncTaskWatcher
-from kontrol.utils.qt.signals import safe_connect
+from kontrol.utils.log import get_logger
+from kontrol.utils.qt.core import safe_connect
+
+logger = get_logger(__name__)
 
 
 class AsyncDialog(QWidget):
@@ -79,7 +81,7 @@ class Keymap:
         safe_connect(shortcut.activated, lambda: self._call_action(key, action))
 
     def unbind_key(self, key: str):
-        logging.debug(f"Unbinding key {type(key).__name__}({key!r})")
+        logger.debug(f"Unbinding key {type(key).__name__}({key!r})")
         if key not in self._shortcuts:
             return
 
@@ -88,7 +90,7 @@ class Keymap:
             self._shortcuts[key] = None
 
     def _call_action(self, key: str, action: Callable):
-        logging.debug(f"Key {key!r} pressed, calling {action} ...")
+        logger.debug(f"Key {key!r} pressed, calling {action} ...")
         action()
 
 
@@ -107,10 +109,10 @@ class _ActionRadioButton(QRadioButton):
 
     def nextCheckState(self):
         if self.isChecked():
-            logging.debug(f"Skipping {self}.activation_requested(): it's checked")
+            logger.debug(f"Skipping {self}.activation_requested(): it's checked")
             super().nextCheckState()
         else:
-            logging.debug(f"Emitting {self}.activation_requested()")
+            logger.debug(f"Emitting {self}.activation_requested()")
             self.activation_requested.emit()
 
     def __str__(self):
@@ -146,7 +148,7 @@ class ActionButtonGroup(QButtonGroup):
         safe_connect(rb.clicked, self._tw.as_task(self._handle_click, button=rb))
 
         if init_state:
-            logging.info(f"Setting {rb} as checked")
+            logger.info(f"Setting {rb} as checked")
             with self._inclusive():
                 rb.setChecked(True)
                 self._active_buttons.add(rb)
@@ -186,7 +188,7 @@ class ActionButtonGroup(QButtonGroup):
 
     async def _handle_click(self, checked=False, *, button: _ActionRadioButton):
         if checked and button in self._active_buttons:
-            logging.info(f"Clicked currently selected {button}, deactivating it")
+            logger.info(f"Clicked currently selected {button}, deactivating it")
             with self.buttons_disabled():
                 await self._deactivate_button(button)
 
@@ -202,7 +204,7 @@ class ActionButtonGroup(QButtonGroup):
             await self._deactivate_button(b)
 
     async def _handle_activation(self, button: _ActionRadioButton):
-        logging.debug(f"Received activation request from {button}")
+        logger.debug(f"Received activation request from {button}")
 
         with self.buttons_disabled():
             await self._deactivate_all()
@@ -210,10 +212,10 @@ class ActionButtonGroup(QButtonGroup):
             try:
                 res = await button.activate_fn()
             except Exception:
-                logging.exception(f"Exception in <{button}>.activate()")
+                logger.exception(f"Exception in <{button}>.activate()")
                 res = False
 
             if res:
-                logging.debug(f"Checking {button}")
+                logger.debug(f"Checking {button}")
                 button.setChecked(True)
                 self._active_buttons.add(button)

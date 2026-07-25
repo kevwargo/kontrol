@@ -7,6 +7,10 @@ from subprocess import DEVNULL, Popen
 from dbus_next import BusType, DBusError, Message
 from dbus_next.aio import MessageBus, ProxyInterface
 
+from kontrol.utils.log import get_logger
+
+logger = get_logger("konsctl")
+
 
 def main():
     asyncio.run(KonsoleService().run(sys.argv[1], sys.argv[2:]))
@@ -60,7 +64,7 @@ class KonsoleService:
                 stderr=DEVNULL,
                 start_new_session=True,
             )
-            print(f"No active Konsole instance found, started new {p.pid}")
+            logger.info(f"No active Konsole instance found, started new {p.pid}")
 
     async def _find_dir_candidate(self, path: Path) -> Session | Window | None:
         window_list = await self._window_list()
@@ -91,9 +95,9 @@ class KonsoleService:
 
         try:
             base_intro = await self._bus.introspect(self._active_service, base_path)
-            print(f"Found Konsole DBus service {self._active_service}")
+            logger.debug(f"Found default Konsole DBus service {self._active_service}")
         except DBusError:
-            print(f"Konsole DBus service {self._active_service} is not available")
+            logger.info(f"Default Konsole DBus service {self._active_service} is not available")
 
         if base_intro is None:
             dbus_iface = await self._bus.get_proxy_iface(
@@ -103,7 +107,7 @@ class KonsoleService:
                 self._active_service = next(
                     n for n in await dbus_iface.call_list_names() if n.startswith(self.DBUS_GLOBAL)
                 )
-                print(f"Found Konsole DBus service {self._active_service}")
+                logger.info(f"Found Konsole DBus service {self._active_service}")
             except StopIteration:
                 pass
             else:
@@ -146,7 +150,9 @@ class Window:
         try:
             await self._iface.call_request_activate()
         except AttributeError:
-            print("The current version of konsole does not support 'request_activate' DBus call")
+            logger.warning(
+                "The current version of konsole does not support 'request_activate' DBus call"
+            )
 
     async def new_session(self, working_dir: Path | str):
         msg = Message(
@@ -185,3 +191,7 @@ class Session:
 
     async def send_text(self, text: str):
         await self._iface.call_send_text(text)
+
+
+if __name__ == "__main__":
+    main()

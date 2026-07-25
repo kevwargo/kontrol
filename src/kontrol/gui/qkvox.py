@@ -1,7 +1,5 @@
 import asyncio
 import json
-import logging
-import os
 import re
 from collections import defaultdict
 from functools import cached_property
@@ -15,14 +13,11 @@ from PyQt6.QtWidgets import QGridLayout, QLabel, QPushButton, QVBoxLayout
 from kontrol.utils.asynch import AsyncTaskWatcher
 from kontrol.utils.cmd import multi_command
 from kontrol.utils.dbus import SystemBus
-from kontrol.utils.qt.core import QDataclass
+from kontrol.utils.log import get_logger
+from kontrol.utils.qt.core import QDataclass, safe_connect
 from kontrol.utils.qt.dialog import ActionButtonGroup, AsyncDialog, Keymap
-from kontrol.utils.qt.signals import safe_connect
 
-logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", logging.INFO),
-    format="%(asctime)s | [%(levelname)s] %(message)s",
-)
+logger = get_logger("qkvox")
 
 
 def main():
@@ -83,10 +78,10 @@ class BTDevice(QObject, QDataclass):
 
     def _set_connected(self, state: bool):
         if state:
-            logging.debug(f"{self} connected, setting {self._activation_event}")
+            logger.debug(f"{self} connected, setting {self._activation_event}")
             self._activation_event.set()
         else:
-            logging.debug(f"{self} disconnected, clearing {self._activation_event}")
+            logger.debug(f"{self} disconnected, clearing {self._activation_event}")
             self._activation_event.clear()
 
 
@@ -124,12 +119,12 @@ class BTManager(QObject):
 
     async def activate_adapter(self):
         cmd = ["rfkill", "unblock", "bluetooth"]
-        logging.debug(f"Running {cmd}")
+        logger.debug(f"Running {cmd}")
         run_cmd(cmd, check=True)
 
-        logging.info("Waiting for BT adapter ...")
+        logger.info("Waiting for BT adapter ...")
         await self._adapter_ready.wait()
-        logging.info("BT adapter ready")
+        logger.info("BT adapter ready")
 
     async def connect_device(self, dev: BTDevice):
         await self.activate_adapter()
@@ -138,18 +133,18 @@ class BTManager(QObject):
         iface = self._bus.get_proxy_object(self.BUS_NAME, dev.id, intro).get_interface(
             self.DEVICE_IFACE
         )
-        logging.debug(f"Calling {dev}.Connect() ...")
+        logger.debug(f"Calling {dev}.Connect() ...")
         await iface.call_connect()
-        logging.debug(f"Call {dev}.Connect() suceeded, waiting for device to become connected")
+        logger.debug(f"Call {dev}.Connect() suceeded, waiting for device to become connected")
 
         await dev.wait_for_connection()
-        logging.debug(f"Fully connected to {dev}")
+        logger.debug(f"Fully connected to {dev}")
 
     async def _notify_device(self, path: str):
         dev = self._devices.get(path)
 
         if dev and not self._ifaces.get(path):
-            logging.info(f"{dev} disappeared")
+            logger.info(f"{dev} disappeared")
             dev.connected = False
             return
 
@@ -161,7 +156,7 @@ class BTManager(QObject):
         name = await iface.get_name()
         address = await iface.get_address()
         if not await iface.get_paired():
-            logging.debug(f"Ignoring unpaired BT device {address}({name})")
+            logger.debug(f"Ignoring unpaired BT device {address}({name})")
             return
 
         connected = await iface.get_connected()
@@ -177,14 +172,14 @@ class BTManager(QObject):
             self.device_added.emit(self._devices[path])
 
     def _notify_adapter(self, path, adapter):
-        logging.info(f"New adapter at {path}: {adapter['Address']}")
+        logger.info(f"New adapter at {path}: {adapter['Address']}")
 
         self._adapter_path = path
         self._adapter_ready.set()
 
     async def _iface_added(self, path: str, new_ifaces: dict):
         self._ifaces[path].update(new_ifaces)
-        logging.debug(f"dbus added: {path} + {sorted(new_ifaces)} = {sorted(self._ifaces[path])}")
+        logger.debug(f"dbus added: {path} + {sorted(new_ifaces)} = {sorted(self._ifaces[path])}")
 
         if self.DEVICE_IFACE in self._ifaces[path]:
             await self._notify_device(path)
@@ -237,7 +232,7 @@ class SinkManager(QObject):
 
     async def wait_until_sink_default(self, sink_name: str):
         await (e := self._default_sink_events[sink_name]).wait()
-        logging.info(f"Wait on default sink event {e} for {sink_name} finished")
+        logger.info(f"Wait on default sink event {e} for {sink_name} finished")
 
     def _on_pactl_event(self):
         out = self.watcher.readAllStandardOutput()
@@ -264,10 +259,10 @@ class SinkManager(QObject):
                 e = self._default_sink_events[name]
                 if name == default_sink:
                     e.set()
-                    logging.debug(f"Default sink event {e} for {name} set")
+                    logger.debug(f"Default sink event {e} for {name} set")
                 else:
                     e.clear()
-                    logging.debug(f"Default sink event {e} for {name} cleared")
+                    logger.debug(f"Default sink event {e} for {name} cleared")
 
         if added or removed or default_sink:
             self.sinks_changed.emit(added, removed, default_sink)
@@ -298,7 +293,7 @@ class AudioOutput(QDataclass):
 
         if self.bt_dev:
             safe_connect(self.bt_dev.props_changed, self._update_label)
-            logging.info(f"Connected initial bt_dev.props_changed to {self}._update_label")
+            logger.info(f"Connected initial bt_dev.props_changed to {self}._update_label")
 
         self._sink_ready = asyncio.Event()
 
@@ -332,15 +327,20 @@ class AudioOutput(QDataclass):
             if not await self._wait_for_sink():
                 return False
 
-        p = await asyncio.create_subprocess_exec("pactl", "set-default-sink", self.sink.name)
+        cmd = ["pactl", "set-default-sink", self.sink.name]
+        logger.debug(f"Running {cmd} ...")
+        p = await asyncio.create_subprocess_exec(cmd)
         await p.wait()
-        if p.returncode != 0:
-            logging.error(f"Failed to set default sink - command exit code {p.returncode}")
-            return False
 
-        logging.debug(f"Waiting until {self.sink} becomes default ...")
+        if p.returncode != 0:
+            logger.debug(f"Command {cmd} failed with {p.returncode}")
+            return False
+        else:
+            logger.debug(f"Command {cmd} succeeded")
+
+        logger.debug(f"Waiting until {self.sink} becomes default ...")
         await self._sink_mgr.wait_until_sink_default(self.sink.name)
-        logging.debug(f"{self.sink} became default ...")
+        logger.debug(f"{self.sink} became default ...")
 
         return True
 
@@ -348,10 +348,10 @@ class AudioOutput(QDataclass):
         try:
             await self._bt_mgr.connect_device(self.bt_dev)
         except DBusError as e:
-            logging.warning(f"Failed to connect to {self.bt_dev}: {e}")
+            logger.warning(f"Failed to connect to {self.bt_dev}: {e}")
             return False
 
-        logging.debug(f"Waiting for sink in {self} ...")
+        logger.debug(f"Waiting for sink in {self} ...")
 
         await self._sink_ready.wait()
 
@@ -368,7 +368,7 @@ class AudioOutput(QDataclass):
         if bt_dev:
             self._update_label()
             safe_connect(bt_dev.props_changed, self._update_label)
-            logging.info(f"Set bt_dev for {self} and connected props_changed")
+            logger.info(f"Set bt_dev for {self} and connected props_changed")
 
     def _set_shortcut(self, shortcut: str | None):
         if shortcut:
@@ -379,14 +379,14 @@ class AudioOutput(QDataclass):
 
     def _set_sink(self, sink: Sink | None):
         if sink is None:
-            logging.debug(f"Sink unset for {self}, clearing {self._sink_ready}")
+            logger.debug(f"Sink unset for {self}, clearing {self._sink_ready}")
             self._sink_ready.clear()
         else:
-            logging.debug(f"Sink set for {self}, setting {self._sink_ready}")
+            logger.debug(f"Sink set for {self}, setting {self._sink_ready}")
             self._sink_ready.set()
 
     def _update_label(self):
-        logging.info(f"Updating label in {self}")
+        logger.info(f"Updating label in {self}")
         self.button.setText(self._label)
 
     def __str__(self):
@@ -450,7 +450,7 @@ class Dialog(AsyncDialog):
         self.keymap.bind(self.KEY_QUIT, self.quit)
 
     async def cleanup(self):
-        logging.debug("Cleanup...")
+        logger.debug("Cleanup...")
 
         self.sink_mgr.stop()
 
@@ -458,10 +458,10 @@ class Dialog(AsyncDialog):
 
         if self.sysbus:
             self.sysbus.disconnect()
-            logging.debug(f"Disconnected {self.sysbus}")
+            logger.debug(f"Disconnected {self.sysbus}")
 
     def sinks_changed(self, added: list[Sink], removed: set[str], new_default: str | None):
-        logging.info(f"Sinks changed - added:{added} removed:{removed} default:{new_default}")
+        logger.info(f"Sinks changed - added:{added} removed:{removed} default:{new_default}")
 
         for o in list(self.audio_outputs):
             if o.sink and o.sink.name in removed:
@@ -484,7 +484,7 @@ class Dialog(AsyncDialog):
         self.update_ui()
 
     def bt_device_added(self, bt_dev: BTDevice):
-        logging.info(f"New {bt_dev}")
+        logger.info(f"New {bt_dev}")
 
         matches = [o for o in self.audio_outputs if o.match_bt(bt_dev)]
         if matches:
@@ -504,7 +504,7 @@ class Dialog(AsyncDialog):
         )
         self.audio_outputs.append(o)
 
-        logging.info(f"Added to UI: {o}")
+        logger.info(f"Added to UI: {o}")
 
     async def activate_bt(self, button_checked=False):
         with self.button_group.buttons_disabled():
@@ -546,9 +546,9 @@ class Dialog(AsyncDialog):
 
     def set_output_shortcut(self, o: AudioOutput) -> str:
         if not (key := self.keymap.next_free_key()):
-            logging.warning(f"Failed to set shortcut for {o} - no free keys left")
+            logger.warning(f"Failed to set shortcut for {o} - no free keys left")
         else:
-            logging.debug(f"Binding {o} to {key!r}")
+            logger.debug(f"Binding {o} to {key!r}")
 
             # TODO: change this bind to animateClick on a button from self.button_group
             self.keymap.bind(key, o.button.animateClick)

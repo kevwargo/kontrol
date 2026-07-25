@@ -15,6 +15,7 @@ from dbus_next.service import ServiceInterface, method
 
 from kontrol.utils.dbus import SessionBus
 from kontrol.utils.kbd import KeySequence, ShortcutInfo
+from kontrol.utils.log import get_logger
 
 SCRIPT_UNIQUE_NAME = "kwinctl"
 
@@ -39,18 +40,15 @@ class Environment:
 
         self.parse_args()
 
-        logfmt = (
-            "[%(levelname)s] %(message)s"
-            if self.args.service
-            else "[%(levelname)s] %(asctime)s %(message)s"
+        self.log = get_logger(
+            "kwinctl",
+            level=logging.DEBUG,
+            fmt=(
+                "[%(lvl)s] %(message)s"
+                if self.args.service
+                else "%(asctime)s [%(lvl)s] %(message)s"
+            ),
         )
-
-        handler = logging.StreamHandler()
-        handler.setLevel(logging.DEBUG)
-        handler.setFormatter(logging.Formatter(logfmt))
-        self.log = logging.getLogger("kwinctl")
-        self.log.setLevel(logging.DEBUG)
-        self.log.addHandler(handler)
 
     def parse_args(self):
         parser = ArgumentParser()

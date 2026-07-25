@@ -1,10 +1,27 @@
-import logging
+from collections.abc import Callable
 from functools import wraps
 from typing import get_type_hints
 
-from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+from PyQt6.QtCore import QObject, QTimer, pyqtBoundSignal, pyqtSignal
 
-from kontrol.utils.qt.signals import safe_connect
+from kontrol.utils.log import get_logger
+
+logger = get_logger(__name__)
+
+
+def safe_connect(sig: pyqtBoundSignal, slot: Callable):
+    """Wraps the slot before passing it to the signal's .connect() method
+    in order to avoid process crash if slot raises an exception.
+    """
+
+    @wraps(slot)
+    def wrapped(*args, **kwargs):
+        try:
+            return slot(*args, **kwargs)
+        except Exception:
+            logger.exception(f"signal:{sig} slot:{slot}")
+
+    sig.connect(wrapped)
 
 
 class QDataclass:
@@ -31,7 +48,7 @@ class QDataclass:
         def fset_signal(self, val):
             if (old_val := getattr(self, f"_{name}")) != val:
                 setattr(self, f"_{name}", val)
-                logging.info(f"changed {self}.{name}: {old_val} -> {val}")
+                logger.info(f"changed {self}.{name}: {old_val} -> {val}")
                 self._props_changed_timer.start()
 
             orig_setter(self, val)

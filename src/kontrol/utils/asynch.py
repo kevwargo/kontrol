@@ -1,6 +1,9 @@
 import asyncio
-import logging
 from functools import wraps
+
+from kontrol.utils.log import get_logger
+
+logger = get_logger(__name__)
 
 
 class AsyncTaskWatcher:
@@ -38,4 +41,4 @@ class AsyncTaskWatcher:
         except asyncio.CancelledError:
             pass
         except Exception:
-            logging.exception(f"Exception in {task}")
+            logger.exception(f"Exception in {task}")
