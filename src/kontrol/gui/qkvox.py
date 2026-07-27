@@ -91,6 +91,7 @@ class BTManager(QObject):
     ADAPTER_IFACE = "org.bluez.Adapter1"
 
     device_added = pyqtSignal(BTDevice)
+    adapter_state_changed = pyqtSignal(bool)
 
     def __init__(self, parent: QObject, bus: SystemBus, tw: AsyncTaskWatcher):
         super().__init__(parent)
@@ -176,6 +177,7 @@ class BTManager(QObject):
 
         self._adapter_path = path
         self._adapter_ready.set()
+        self.adapter_state_changed.emit(True)
 
     async def _iface_added(self, path: str, new_ifaces: dict):
         self._ifaces[path].update(new_ifaces)
@@ -192,6 +194,7 @@ class BTManager(QObject):
         if not self._ifaces[path]:
             if path == self._adapter_path:
                 self._adapter_ready.clear()
+                self.adapter_state_changed.emit(False)
 
         if path in self._devices:
             await self._notify_device(path)
@@ -329,7 +332,7 @@ class AudioOutput(QDataclass):
 
         cmd = ["pactl", "set-default-sink", self.sink.name]
         logger.debug(f"Running {cmd} ...")
-        p = await asyncio.create_subprocess_exec(cmd)
+        p = await asyncio.create_subprocess_exec(*cmd)
         await p.wait()
 
         if p.returncode != 0:
@@ -445,6 +448,7 @@ class Dialog(AsyncDialog):
         self.sink_mgr.start()
 
         safe_connect(self.bt_mgr.device_added, self.bt_device_added)
+        safe_connect(self.bt_mgr.adapter_state_changed, self.bt_adapter_state_changed)
         await self.bt_mgr.start()
 
         self.keymap.bind(self.KEY_QUIT, self.quit)
@@ -494,6 +498,12 @@ class Dialog(AsyncDialog):
 
         self.update_ui()
 
+    def bt_adapter_state_changed(self, state: bool):
+        if state:
+            self.hide_bt_button()
+        else:
+            self.show_bt_button()
+
     def add_output(self, *, sink: Sink | None = None, bt_dev: BTDevice | None = None):
         o = AudioOutput(
             sink=sink,
@@ -516,6 +526,7 @@ class Dialog(AsyncDialog):
                 raise
 
     def show_bt_button(self):
+        logger.debug("Showing BT button")
         self.bt_activate_button.show()
         for o in self.audio_outputs:
             if o.shortcut == self.KEY_ENABLE_BT:
@@ -526,6 +537,7 @@ class Dialog(AsyncDialog):
         self.keymap.bind(self.KEY_ENABLE_BT, self.bt_activate_button.animateClick)
 
     def hide_bt_button(self):
+        logger.debug("Hiding BT button")
         self.bt_activate_button.hide()
         self.keymap.unbind_key(self.KEY_ENABLE_BT)
 
