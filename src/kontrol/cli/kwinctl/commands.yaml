@@ -47,3 +47,15 @@ dtt:
 restart-plasmashell:
   key: Meta+Shift+Ctrl+K
   shell: kquitapp6 plasmashell && kstart plasmashell
+move-left:
+  key: Meta+Left
+  builtin: activeWindowToLeftEdge
+move-right:
+  key: Meta+Right
+  builtin: activeWindowToRightEdge
+move-up:
+  key: Meta+Up
+  builtin: activeWindowToTopEdge
+move-down:
+  key: Meta+Down
+  builtin: activeWindowToBottomEdge

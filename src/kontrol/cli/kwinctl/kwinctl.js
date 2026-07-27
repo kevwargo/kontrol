@@ -7,6 +7,42 @@
 
 const rulesByWindowId = {};
 
+const builtinCommands = {
+  activeWindowToLeftEdge() {
+    const w = workspace.activeWindow;
+    w.frameGeometry = Object.assign({}, w.frameGeometry, {
+      x: w.output.geometry.x,
+    });
+  },
+  activeWindowToRightEdge() {
+    const w = workspace.activeWindow;
+    const sg = w.output.geometry;
+    w.frameGeometry = Object.assign({}, w.frameGeometry, {
+      x: sg.x + sg.width - w.width,
+    });
+  },
+  activeWindowToTopEdge() {
+    const w = workspace.activeWindow;
+    w.frameGeometry = Object.assign({}, w.frameGeometry, {
+      y: w.output.geometry.y,
+    });
+  },
+  activeWindowToBottomEdge() {
+    const aw = workspace.activeWindow;
+    const sg = aw.output.geometry;
+    const panel = workspace
+      .windowList()
+      .find((w) => w.dock && w.output == aw.output);
+    const panelHeight = panel ? panel.height : 0;
+
+    aw.frameGeometry = Object.assign({}, aw.frameGeometry, {
+      y: sg.y + sg.height - panelHeight - aw.height,
+    });
+  },
+};
+
+function findPanelForWindow(window) {}
+
 function log(msg) {
   console.info(`KWinCTL: ${msg}`);
 }
@@ -50,6 +86,16 @@ function triggerRule({ id, key, candidates, command, auto }) {
 
 function triggerCommand({ id, cmd }) {
   log(`cmd ${id} triggered by ${cmd.key}`);
+
+  const { builtin } = cmd;
+  if (builtin) {
+    builtinCmd = builtinCommands[builtin];
+    if (builtinCmd) {
+      builtinCmd();
+    } else {
+      console.warning(`Built-in command ${builtin} not found`);
+    }
+  }
 
   selfDBus("RunCommand", id);
 }
