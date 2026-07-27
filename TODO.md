@@ -18,6 +18,7 @@
         f'reply_notify must be a function with {len(intr_signal.args)} parameters')
 TypeError: reply_notify must be a function with 3 parameters
 ```
+
 - Retry BT connection request when sth like this happens
 ```
 2026-07-24 23:59:31,453 | [WARNING] Failed to connect to BTDev<C4:A9:B8:0C:C0:A2('JBL Vibe Beam 2') [OFF]>: br-connection-adapter-not-powered
@@ -43,14 +44,15 @@ TypeError: reply_notify must be a function with 3 parameters
       chars: (default ' \n\r\t')
 ```
 
+## Builtin commands
+
+Allow to bind builtin commands - the ones defined directly in JS.
+
+Ideas for such commands:
+- Move window to left/right/top/bottom screen edge (also take panels into consideration)
+- Center window
+
 # QKVox
 
-- **fix**: BT devices don't switch to `[OFF]` in UI
-- actually run `pactl set-default-sink` once previously inactive BT device comes online
-- make loader last longer when connecting to a device with bt disabled (currently loader disappers quicker than needed - when adapter activates, while it should wait until the device in question appears)
 - implement unmuting channels
 - adapt for multiple adapters (xD)
-
-# New stuff
-
-- VPNs from /etc/wireguard
