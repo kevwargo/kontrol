@@ -7,6 +7,10 @@
 
 const rulesByWindowId = {};
 
+function log(msg) {
+  console.info(`KWinCTL: ${msg}`);
+}
+
 function wfmt(w) {
   return `${w.resourceName}(${w.caption})${w.internalId}`;
 }
@@ -16,9 +20,9 @@ function wsfmt(ws) {
 }
 
 function triggerRule({ id, key, candidates, command, auto }) {
-  const log = (msg) => console.info(`kwinctl rule ${id}: ${msg}`);
+  const logrule = (msg) => log(`rule ${id}: ${msg}`);
 
-  log(
+  logrule(
     `triggered by ${key}; active=${wfmt(workspace.activeWindow)} candidates=${wsfmt(candidates)}`,
   );
 
@@ -27,25 +31,25 @@ function triggerRule({ id, key, candidates, command, auto }) {
     if (workspace.activeWindow === candidate && candidates.length) {
       candidates.push(candidates.shift());
       candidate = candidates[0];
-      log(`rearranged candidates: ${wsfmt(candidates)}`);
+      logrule(`rearranged candidates: ${wsfmt(candidates)}`);
     }
-    log(`activating ${wfmt(candidate)}`);
+    logrule(`activating ${wfmt(candidate)}`);
     workspace.activeWindow = candidate;
   } else if (command) {
     if (auto) {
-      log(`not found, executing ${command}`);
+      logrule(`not found, executing ${command}`);
       selfDBus("RunShellCommand", command);
     } else {
-      log(`not found, prompting ${command}`);
+      logrule(`not found, prompting ${command}`);
       krunnerPrompt(command);
     }
   } else {
-    log("not found, ignoring");
+    logrule("not found, ignoring");
   }
 }
 
 function triggerCommand({ id, cmd }) {
-  console.info(`kwinctl cmd ${id} triggered by ${cmd.key}`);
+  log(`cmd ${id} triggered by ${cmd.key}`);
 
   selfDBus("RunCommand", id);
 }
@@ -61,16 +65,14 @@ function krunnerPrompt(cmd) {
 
 function matchRule(rule, window) {
   if (!rule.cls && !rule.caption) {
-    console.info(
-      `kwinctl matcher: ignoring rule with empty matching props: ${rule}`,
-    );
+    log(`matcher: ignoring rule with empty matching props: ${rule}`);
     return false;
   }
 
   if (rule.cls && rule.cls !== window.resourceClass) return false;
   if (rule.caption && rule.caption !== window.caption) return false;
 
-  console.info(`kwinctl matcher: ${wfmt(window)} matched by ${rule}`);
+  log(`matcher: ${wfmt(window)} matched by ${rule}`);
 
   return true;
 }
@@ -80,16 +82,14 @@ function onNewWindow(window) {
 
   const rule = RULES.find((r) => matchRule(r, window));
   if (!rule) {
-    console.info(`${wfmt(window)} is not matched by any rule, ignoring it`);
+    log(`${wfmt(window)} is not matched by any rule, ignoring it`);
     return;
   }
 
   rulesByWindowId[window.internalId] = rule;
   rule.candidates = [window, ...(rule.candidates ?? [])];
 
-  console.info(
-    `kwinctl rule ${rule.id}: added ${wfmt(window)} to ${wsfmt(rule.candidates)}`,
-  );
+  log(`rule ${rule.id}: added ${wfmt(window)} to ${wsfmt(rule.candidates)}`);
 }
 
 function onWindowRemove(window) {
@@ -97,8 +97,8 @@ function onWindowRemove(window) {
   if (!rule) return;
 
   rule.candidates = rule.candidates.filter((w) => w !== window);
-  console.info(
-    `kwinctl rule ${rule.id}: removed ${wfmt(window)} from ${wsfmt(rule.candidates)}`,
+  log(
+    `rule ${rule.id}: removed ${wfmt(window)} from ${wsfmt(rule.candidates)}`,
   );
 
   delete rulesByWindowId[window.internalId];
@@ -107,7 +107,7 @@ function onWindowRemove(window) {
 function onWindowActivate(window) {}
 
 RULES.forEach((r) => {
-  console.info(`kwinctl: binding ${r.key} to rule ${JSON.stringify(r)}`);
+  log(`binding ${r.key} to rule ${JSON.stringify(r)}`);
   registerShortcut(
     `kwinctl_rule_${r.id}`,
     `KWinCTL: Focus ${r.id}`,
@@ -117,7 +117,7 @@ RULES.forEach((r) => {
 });
 
 Object.entries(COMMANDS).forEach(([id, cmd]) => {
-  console.info(`kwinctl: binding ${cmd.key} to command ${JSON.stringify(cmd)}`);
+  log(`binding ${cmd.key} to command ${JSON.stringify(cmd)}`);
   registerShortcut(`kwinctl_cmd_${id}`, `KWinCTL: Run ${id}`, cmd.key, () =>
     triggerCommand({ id, cmd }),
   );
