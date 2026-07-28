@@ -63,3 +63,7 @@ move-down:
   key: Meta+Down
   builtinId: activeWindowToBottomEdge
   description: Move active window to bottom screen edge
+center-window:
+  key: Meta+|
+  builtinId: centerActiveWindow
+  description: Move active window to screen center
