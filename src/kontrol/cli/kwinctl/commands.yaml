@@ -49,13 +49,17 @@ restart-plasmashell:
   shell: kquitapp6 plasmashell && kstart plasmashell
 move-left:
   key: Meta+Left
-  builtin: activeWindowToLeftEdge
+  builtinId: activeWindowToLeftEdge
+  description: Move active window to left screen edge
 move-right:
   key: Meta+Right
-  builtin: activeWindowToRightEdge
+  builtinId: activeWindowToRightEdge
+  description: Move active window to right screen edge
 move-up:
   key: Meta+Up
-  builtin: activeWindowToTopEdge
+  builtinId: activeWindowToTopEdge
+  description: Move active window to top screen edge
 move-down:
   key: Meta+Down
-  builtin: activeWindowToBottomEdge
+  builtinId: activeWindowToBottomEdge
+  description: Move active window to bottom screen edge

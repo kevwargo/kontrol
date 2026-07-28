@@ -87,13 +87,12 @@ function triggerRule({ id, key, candidates, command, auto }) {
 function triggerCommand({ id, cmd }) {
   log(`cmd ${id} triggered by ${cmd.key}`);
 
-  const { builtin } = cmd;
-  if (builtin) {
-    builtinCmd = builtinCommands[builtin];
+  if (cmd.builtinId) {
+    builtinCmd = builtinCommands[cmd.builtinId];
     if (builtinCmd) {
       builtinCmd();
     } else {
-      console.warning(`Built-in command ${builtin} not found`);
+      console.warning(`Built-in command ${cmd.builtinId} not found`);
     }
   }
 
@@ -156,7 +155,7 @@ RULES.forEach((r) => {
   log(`binding ${r.key} to rule ${JSON.stringify(r)}`);
   registerShortcut(
     `kwinctl_rule_${r.id}`,
-    `KWinCTL: Focus ${r.id}`,
+    r.description ?? `KWinCTL: Focus ${r.id}`,
     r.key,
     () => triggerRule(r),
   );
@@ -164,8 +163,11 @@ RULES.forEach((r) => {
 
 Object.entries(COMMANDS).forEach(([id, cmd]) => {
   log(`binding ${cmd.key} to command ${JSON.stringify(cmd)}`);
-  registerShortcut(`kwinctl_cmd_${id}`, `KWinCTL: Run ${id}`, cmd.key, () =>
-    triggerCommand({ id, cmd }),
+  registerShortcut(
+    `kwinctl_cmd_${id}`,
+    cmd.description ?? `KWinCTL: Run ${id}`,
+    cmd.key,
+    () => triggerCommand({ id, cmd }),
   );
 });
 
