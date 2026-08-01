@@ -50,7 +50,7 @@ clean-pacman:
 	cd $(PACMAN_DIR) && rm -rf src pkg *.tar.zst
 
 ## RPM targets
-.PHONY: build-rpm install-rpm
+.PHONY: build-rpm install-rpm clean-rpm
 
 build-rpm: dist-source $(RPM_DIR)/SOURCES/$(QASYNC_WHEEL_FILENAME)
 	cp $(DISTDIR)/$(PKG_SOURCE_DIST) $(RPM_DIR)/SOURCES/$(PKG_SOURCE_DIST)
@@ -67,3 +67,6 @@ $(RPM_DIR)/SOURCES/$(QASYNC_WHEEL_FILENAME):
 
 rpm-docker:
 	cd docker && HOST_USER=$(shell id -u):$(shell id -g) docker compose run --rm --build rpm-builder
+
+clean-rpm:
+	cd $(RPM_DIR) && rm -rf BUILD RPMS SOURCES SRPMS
