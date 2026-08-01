@@ -17,7 +17,7 @@ from kontrol.utils.log import get_logger
 from kontrol.utils.qt.core import QDataclass, safe_connect
 from kontrol.utils.qt.dialog import ActionButtonGroup, AsyncDialog, Keymap
 
-logger = get_logger("qkvox")
+logger = get_logger("qkvox", level="DEBUG")
 
 
 def main():
@@ -181,7 +181,6 @@ class BTManager(QObject):
 
     async def _iface_added(self, path: str, new_ifaces: dict):
         self._ifaces[path].update(new_ifaces)
-        logger.debug(f"dbus added: {path} + {sorted(new_ifaces)} = {sorted(self._ifaces[path])}")
 
         if self.DEVICE_IFACE in self._ifaces[path]:
             await self._notify_device(path)
@@ -560,11 +559,7 @@ class Dialog(AsyncDialog):
         if not (key := self.keymap.next_free_key()):
             logger.warning(f"Failed to set shortcut for {o} - no free keys left")
         else:
-            logger.debug(f"Binding {o} to {key!r}")
-
-            # TODO: change this bind to animateClick on a button from self.button_group
             self.keymap.bind(key, o.button.animateClick)
-
             o.shortcut = key
 
     def assign_sink(self, sink: Sink) -> bool:

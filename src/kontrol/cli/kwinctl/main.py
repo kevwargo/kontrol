@@ -381,7 +381,7 @@ class Bus(SessionBus):
 
 
 class HotkeysConfig:
-    COMMAND_KEYS = {"shell", "cmd", "prompt", "snippet", "builtin"}
+    COMMAND_KEYS = {"shell", "cmd", "prompt", "snippet", "builtinId"}
 
     def __init__(self, env: Environment):
         self.env = env

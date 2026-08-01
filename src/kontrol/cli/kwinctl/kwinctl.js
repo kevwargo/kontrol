@@ -7,9 +7,14 @@
 
 const rulesByWindowId = {};
 
+const MAX_MODE_VERT = 1;
+const MAX_MODE_HOR = 2;
+
 const builtinCommands = {
   activeWindowToLeftEdge() {
     const w = workspace.activeWindow;
+    if (w.maximizeMode & MAX_MODE_HOR) return;
+
     w.frameGeometry = Object.assign({}, w.frameGeometry, {
       x: w.output.geometry.x,
     });
@@ -17,31 +22,53 @@ const builtinCommands = {
   activeWindowToRightEdge() {
     const w = workspace.activeWindow;
     const sg = w.output.geometry;
+    if (w.maximizeMode & MAX_MODE_HOR) return;
+
     w.frameGeometry = Object.assign({}, w.frameGeometry, {
       x: sg.x + sg.width - w.width,
     });
   },
   activeWindowToTopEdge() {
     const w = workspace.activeWindow;
+    if (w.maximizeMode & MAX_MODE_VERT) return;
+
     w.frameGeometry = Object.assign({}, w.frameGeometry, {
       y: w.output.geometry.y,
     });
   },
   activeWindowToBottomEdge() {
-    const aw = workspace.activeWindow;
-    const sg = aw.output.geometry;
-    const panel = workspace
-      .windowList()
-      .find((w) => w.dock && w.output == aw.output);
-    const panelHeight = panel ? panel.height : 0;
+    const w = workspace.activeWindow;
+    if (w.maximizeMode & MAX_MODE_VERT) return;
 
-    aw.frameGeometry = Object.assign({}, aw.frameGeometry, {
-      y: sg.y + sg.height - panelHeight - aw.height,
+    w.frameGeometry = Object.assign({}, w.frameGeometry, {
+      y: w.output.geometry.y + usableScreenHeight(w.output) - w.height,
+    });
+  },
+  centerActiveWindow() {
+    const w = workspace.activeWindow;
+    const sg = w.output.geometry;
+    if (w.maximizeMode === (MAX_MODE_VERT | MAX_MODE_HOR)) return;
+
+    w.frameGeometry = Object.assign({}, w.frameGeometry, {
+      x: sg.x + Math.max(0, Math.floor(sg.width / 2) - Math.floor(w.width / 2)),
+      y:
+        sg.y +
+        Math.max(
+          0,
+          Math.floor(usableScreenHeight(w.output) / 2) -
+            Math.floor(w.height / 2),
+        ),
     });
   },
 };
 
-function findPanelForWindow(window) {}
+function usableScreenHeight(screen) {
+  return (
+    screen.geometry.height -
+    (workspace.windowList().find((w) => w.dock && w.output == screen)?.height ??
+      0)
+  );
+}
 
 function log(msg) {
   console.info(`KWinCTL: ${msg}`);
@@ -87,13 +114,12 @@ function triggerRule({ id, key, candidates, command, auto }) {
 function triggerCommand({ id, cmd }) {
   log(`cmd ${id} triggered by ${cmd.key}`);
 
-  const { builtin } = cmd;
-  if (builtin) {
-    builtinCmd = builtinCommands[builtin];
+  if (cmd.builtinId) {
+    builtinCmd = builtinCommands[cmd.builtinId];
     if (builtinCmd) {
       builtinCmd();
     } else {
-      console.warning(`Built-in command ${builtin} not found`);
+      console.warning(`Built-in command ${cmd.builtinId} not found`);
     }
   }
 
@@ -156,7 +182,7 @@ RULES.forEach((r) => {
   log(`binding ${r.key} to rule ${JSON.stringify(r)}`);
   registerShortcut(
     `kwinctl_rule_${r.id}`,
-    `KWinCTL: Focus ${r.id}`,
+    r.description ?? `KWinCTL: Focus ${r.id}`,
     r.key,
     () => triggerRule(r),
   );
@@ -164,8 +190,11 @@ RULES.forEach((r) => {
 
 Object.entries(COMMANDS).forEach(([id, cmd]) => {
   log(`binding ${cmd.key} to command ${JSON.stringify(cmd)}`);
-  registerShortcut(`kwinctl_cmd_${id}`, `KWinCTL: Run ${id}`, cmd.key, () =>
-    triggerCommand({ id, cmd }),
+  registerShortcut(
+    `kwinctl_cmd_${id}`,
+    cmd.description ?? `KWinCTL: Run ${id}`,
+    cmd.key,
+    () => triggerCommand({ id, cmd }),
   );
 });
 
