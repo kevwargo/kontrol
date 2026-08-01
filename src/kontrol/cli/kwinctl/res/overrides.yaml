@@ -27,6 +27,10 @@ kwin:
     name: Move Window to Previous Screen
     keys:
       - Meta+Shift+Up
+  Window Resize:
+    name: Resize Window
+    keys:
+      - Meta+#
 org.kde.dolphin.desktop:
   _launch:
     name: Dolphin
@@ -80,10 +84,17 @@ org.kde.spectacle.desktop:
     name: Launch without taking a screenshot
     keys:
       - Meta+Shift+S
+  RecordRegion:
+    name: Start/Stop Region Recording
+    keys: []
+  WindowUnderCursorScreenShot:
+    name: Capture Window Under Cursor
+    keys:
+      - Meta+4
 org.kde.konsole.desktop:
   _launch:
     name: Konsole
-    keys: [] # The default is Ctrl+Alt+T which is needed as local hotkey in Krusader
+    keys: []
 mediacontrol:
   playpausemedia:
     name: Play/Pause media playback
@@ -103,8 +114,8 @@ mediacontrol:
   seekbackwardmedia:
     name: Media playback seek backward 5s
     keys:
-      - Meta+[
       - Media Rewind
+      - Meta+[
   seekforwardmedia:
     name: Media playback seek forward 5s
     keys:
@@ -118,4 +129,36 @@ mediacontrol:
     name: Media playback seek forward 30s
     keys:
       - Meta+}
-
+amarok:
+  rate4:
+    name: 'Rate Current Track: 4'
+    keys: []
+  stop_after_current:
+    name: Stop after current Track
+    keys: []
+  seek_backward_medium:
+    name: Seek Backward by 10.0 seconds
+    keys: []
+  rate5:
+    name: 'Rate Current Track: 5'
+    keys: []
+  seek_forward_medium:
+    name: Seek Forward by 10.0 seconds
+    keys: []
+  loveTrack:
+    name: 'Last.fm: Love Current Track'
+    keys: []
+  playlist_add:
+    name: Add Media...
+    keys: []
+  mute:
+    name: Mute Volume
+    keys: []
+  decreaseVolume:
+    name: Decrease Volume
+    keys: []
+org_kde_powerdevil:
+  powerProfile:
+    name: Switch Power Profile
+    keys:
+      - Battery
