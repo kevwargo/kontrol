@@ -6,7 +6,8 @@ import signal
 from argparse import ArgumentParser
 from collections import defaultdict
 from pathlib import Path
-from subprocess import PIPE, Popen
+from subprocess import DEVNULL, PIPE, Popen
+from subprocess import run as run_cmd
 from tempfile import NamedTemporaryFile
 
 import yaml
@@ -93,7 +94,7 @@ class Environment:
             if v is None:
                 self.log.debug(f"Removing disabled {k} from {filename}")
             else:
-                self.log.debug(f"Setting {filename}:{k} = {v}")
+                self.log.debug(f"Using {k}={v} from {filename}")
                 merged_cfg[k] = v
 
         return merged_cfg
@@ -106,6 +107,7 @@ class Environment:
             path = self.localdir / filename
 
         path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+        run_cmd(["yamlfmt", str(path)], stdout=DEVNULL, stderr=DEVNULL)
 
     @staticmethod
     def _read_yaml(path: Path) -> dict:
@@ -455,45 +457,37 @@ class OverridesManager:
         self.env = env
 
     async def sync(self):
-        if self.args.reset_overrides:
-            overrides = {}
-        else:
-            overrides = HotkeysConfig(self.env).overrides
+        cfg_hotkeys = HotkeysConfig(self.env)
+        used_keys = set(cfg_hotkeys.bindings)
+        overrides = self.env.read_cfg("overrides.yaml")
+        active_shortcuts = await self._active_shortcuts()
 
-        active = await self._active_shortcuts()
-        for (comp_id, act_id), action in active.items():
-            if self.args.components:
-                if comp_id not in self.args.components:
-                    continue
-            elif action["keys"] == action["default_keys"]:
+        for (comp_id, act_id), s in active_shortcuts.items():
+            default_keys = set(s.default_keys) - used_keys
+            if set(s.active_keys) == default_keys:
                 continue
 
-            overrides[(comp_id, act_id)] = action
-
-        overrides_export = defaultdict(dict)
-        for (comp_id, act_id), action in overrides.items():
-            overrides_export[comp_id][act_id] = {
-                "name": action["name"],
-                "keys": [str(k) for k in action["keys"]],
-            }
-
-        self.env.write_cfg_file(
-            "overrides.yaml", yaml.safe_dump(dict(overrides_export), sort_keys=False)
-        )
-
-    async def _active_shortcuts(self) -> dict[tuple[str, str], dict]:
-        all_shortcuts = {}
-        for s in await self.bus.kgl_all_shortcuts():
-            if s.action_id.startswith("kwinctl_"):
+            if comp_id == "plasmashell" and act_id.startswith("activate widget"):
+                # these are inherently non-portable since they include dynamic widget IDs
+                # as hardcoded values.
                 continue
 
-            all_shortcuts[(s.component_id, s.action_id)] = {
+            if comp_id not in overrides:
+                overrides[comp_id] = {}
+
+            overrides[comp_id][act_id] = {
                 "name": s.action_name,
-                "keys": s.active_keys,
-                "default_keys": s.default_keys,
+                "keys": sorted(k.toString() for k in s.active_keys),
             }
 
-        return all_shortcuts
+        self.env.write_cfg("overrides.yaml", overrides)
+
+    async def _active_shortcuts(self) -> dict[tuple[str, str], ShortcutInfo]:
+        return {
+            (s.component_id, s.action_id): s
+            for s in await self.bus.kgl_all_shortcuts()
+            if not s.action_id.startswith("kwinctl_")
+        }
 
 
 if __name__ == "__main__":
