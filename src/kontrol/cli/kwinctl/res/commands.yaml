@@ -67,3 +67,6 @@ center-window:
   key: Meta+|
   builtinId: centerActiveWindow
   description: Move active window to screen center
+configure-shortcuts:
+  key: Meta+Alt+,
+  shell: systemsettings kcm_keys

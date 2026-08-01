@@ -162,3 +162,7 @@ org_kde_powerdevil:
     name: Switch Power Profile
     keys:
       - Battery
+systemsettings.desktop:
+  _launch:
+    name: System Settings
+    keys: []
