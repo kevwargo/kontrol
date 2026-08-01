@@ -23,7 +23,8 @@ package() {
 
     install -Dm644 systemd/kwinctl.service ${pkgdir}/usr/lib/systemd/user/kwinctl.service
 
+    local f
     for f in kwinctl.js rules.yaml commands.yaml overrides.yaml; do
-        install -Dm644 src/kontrol/cli/kwinctl/$f ${pkgdir}/usr/share/kwinctl/$f
+        install -Dm644 src/kontrol/cli/kwinctl/res/$f ${pkgdir}/usr/share/kwinctl/$f
     done
 }

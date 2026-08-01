@@ -37,7 +37,7 @@ class Environment:
     def __init__(self):
         self.sysdir = Path("/usr/share/kwinctl")
         self.userdir = Path("~/.local/share/kwinctl").expanduser()
-        self.localdir = Path(__file__).parent
+        self.resdir = Path(__file__).parent / "res"
 
         self.parse_args()
 
@@ -60,21 +60,14 @@ class Environment:
             action="store_true",
             help="Sync the current state of global shortcuts into overrides.yaml",
         )
-        parser.add_argument("-X", "--reset-overrides", action="store_true")
-        parser.add_argument(
-            "-c",
-            "--components",
-            action="append",
-            help="Instead of non-default, sync shortcuts from these components",
-        )
         self.args = parser.parse_args()
 
     def read_raw(self, filename: str) -> str:
-        return ((self.sysdir if self.args.service else self.localdir) / filename).read_text()
+        return ((self.sysdir if self.args.service else self.resdir) / filename).read_text()
 
     def read_cfg(self, filename: str) -> dict:
         if not self.args.service:
-            return self._read_yaml(self.localdir / filename)
+            return self._read_yaml(self.resdir / filename)
 
         try:
             cfg = self._read_yaml(self.sysdir / filename)
@@ -104,7 +97,7 @@ class Environment:
             path = self.userdir / filename
             path.parent.mkdir(parents=True, exist_ok=True)
         else:
-            path = self.localdir / filename
+            path = self.resdir / filename
 
         path.write_text(yaml.safe_dump(cfg, sort_keys=False))
         run_cmd(["yamlfmt", str(path)], stdout=DEVNULL, stderr=DEVNULL)
