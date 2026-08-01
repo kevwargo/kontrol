@@ -49,8 +49,12 @@ TypeError: reply_notify must be a function with 3 parameters
 Allow to bind builtin commands - the ones defined directly in JS.
 
 Ideas for such commands:
-- Move window to left/right/top/bottom screen edge (also take panels into consideration)
 - Center window
+
+## Overrides
+
+Improve registration (a.k.a. recording) of currently active global shortcuts and saving it in reproducible
+form in `overrides.yaml`.
 
 # QKVox
 
