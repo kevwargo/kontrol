@@ -1,0 +1,23 @@
+[Desktop Entry]
+DefaultProfile=kevwargo-light.profile
+
+[General]
+ConfigVersion=1
+
+[KonsoleWindow]
+EnableSecuritySensitiveDBusAPI=true
+ShowWindowTitleOnTitleBar=true
+UseSingleInstance=true
+
+[MainWindow]
+MenuBar=Disabled
+
+[Shortcut Schemes]
+Current Scheme=Kevwargo
+
+[Shortcuts]
+mainToolBar=none
+sessionToolbar=none
+
+[UiSettings]
+ColorScheme=

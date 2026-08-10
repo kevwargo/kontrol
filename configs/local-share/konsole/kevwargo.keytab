@@ -1,4 +1,4 @@
-keyboard "Default (XFree 4)"
+keyboard "Kevwargo (XFree 4)"
 key F7+AnyModifier : "\E[18;*~"
 key F7-AnyModifier : "\E[18~"
 key F3+AnyModifier : "\EO*R"
