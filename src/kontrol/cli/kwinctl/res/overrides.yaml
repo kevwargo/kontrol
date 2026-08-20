@@ -53,6 +53,10 @@ plasmashell:
     name: Show Clipboard Items at Mouse Position
     keys:
       - Meta+Shift+K
+  activate application launcher:
+    name: Activate Application Launcher
+    keys:
+      - Alt+F1
 ksmserver:
   Lock Session:
     name: Lock Session
