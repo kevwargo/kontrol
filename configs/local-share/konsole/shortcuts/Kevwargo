@@ -43,8 +43,8 @@
     <Action name="previous-tab" shortcut="Shift+Left; Ctrl+PgUp"/>
     <Action name="focus-view-above" shortcut="Ctrl+Alt+Up"/>
     <Action name="focus-view-below" shortcut="Ctrl+Alt+Down"/>
-    <Action name="focus-view-left" shortcut="Ctrl+Alt+Left; "/>
-    <Action name="focus-view-right" shortcut="Ctrl+Alt+Right; "/>
+    <Action name="focus-view-left" shortcut="Ctrl+Alt+Left"/>
+    <Action name="focus-view-right" shortcut="Ctrl+Alt+Right"/>
     <Action name="last-used-tab" shortcut="Ctrl+Tab"/>
     <Action name="last-used-tab-reverse" shortcut="Ctrl+Shift+Tab"/>
     <Action name="toggle-maximize-current-view" shortcut="Ctrl+Shift+E"/>
@@ -66,7 +66,8 @@
     <Action name="switch-to-tab-8" shortcut="Alt+9"/>
     <Action name="switch-to-tab-9" shortcut="Alt+0"/>
     <Action name="options_configure_keybinding" shortcut="Ctrl+Alt+,"/>
+    <Action name="help_contents" shortcut="F1"/>
     <Action name="help_whats_this" shortcut="Shift+F1"/>
-    <Action name="hamburger_menu" shortcut="Shift+F10"/>
+    <Action name="help_about_app" shortcut="Ctrl+Alt+?"/>
   </ActionProperties>
 </gui>
