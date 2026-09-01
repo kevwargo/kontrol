@@ -15,12 +15,12 @@ xkb_symbols "kotoistus" {
 
     name[Group1]="Finnish";
 
-key  <TLDE>  {[  grave,         asciitilde,   notsign,               logicalor            ]};
+key  <TLDE>  {[  grave,         asciitilde,   dead_grave,            dead_tilde           ]};
 key  <AE01>  {[  1,             exclam,       notequal,              exclamdown           ]};
 key  <AE02>  {[  2,             at,           twosuperior,           questiondown         ]};
 key  <AE04>  {[  4,             dollar,       cent,                  onequarter           ]};
 key  <AE05>  {[  5,             percent,      EuroSign,              U2030                ]};
-key  <AE06>  {[  6,             asciicircum,  onehalf,               logicaland           ]};
+key  <AE06>  {[  6,             asciicircum,  dead_circumflex,       dead_macron          ]};
 key  <AE07>  {[  7,             ampersand,    section,               U2248                ]};
 key  <AE08>  {[  8,             asterisk,     periodcentered,        threequarters        ]};
 key  <AE09>  {[  9,             parenleft,    adiaeresis,            Adiaeresis           ]};
@@ -45,6 +45,8 @@ key  <AC06>  {[  h,             H,            rightsinglequotemark,  U2022      
 key  <AC07>  {[  j,             J,            lcaron,                Lcaron               ]};
 key  <AC08>  {[  k,             K,            lacute,                Lacute               ]};
 key  <AC10>  {[  semicolon,     colon,        zcaron,                Zcaron               ]};
+key  <AC11>  {[  apostrophe,    quotedbl,     dead_doubleacute,      dead_doublegrave     ]};
+key  <BKSL>  {[  backslash,     bar,          dead_caron,            dead_breve           ]};
 key  <AB01>  {[  z,             Z,            zabovedot,             Zabovedot            ]};
 key  <AB02>  {[  x,             X,            zacute,                Zacute               ]};
 key  <AB03>  {[  c,             C,            cacute,                Cacute               ]};
@@ -52,8 +54,8 @@ key  <AB04>  {[  v,             V,            ccaron,                Ccaron     
 key  <AB05>  {[  b,             B,            rightdoublequotemark,  leftdoublequotemark  ]};
 key  <AB06>  {[  n,             N,            nacute,                Nacute               ]};
 key  <AB07>  {[  m,             M,            mu,                    infinity             ]};
-key  <AB08>  {[  comma,         less,         lessthanequal,         multiply             ]};
-key  <AB09>  {[  period,        greater,      greaterthanequal,      division             ]};
+key  <AB08>  {[  comma,         less,         dead_ogonek,           multiply             ]};
+key  <AB09>  {[  period,        greater,      dead_belowdot,         dead_abovedot        ]};
 key  <AB10>  {[  slash,         question,     dead_acute,            dead_diaeresis       ]};
 key  <SPCE>  {[  space,         space,        nobreakspace,          nobreakspace         ]};
 
