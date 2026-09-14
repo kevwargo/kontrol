@@ -25,6 +25,11 @@ emacs:
   key: Meta+E
   cls: Emacs
   command: emacs
+foot:
+  key: Meta+Shift+T
+  cls: foot
+  command: foot
+  auto: true
 telegram:
   key: Meta+T
   cls: org.telegram.desktop

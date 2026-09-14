@@ -22,9 +22,6 @@ bt-off:
 kscreen-toggle:
   key: Meta+Alt+X
   shell: kscreen-toggle
-open-foot:
-  key: Meta+Shift+T
-  shell: foot -w 1200x800
 email:
   key: Meta+Alt+2
   snippet:
