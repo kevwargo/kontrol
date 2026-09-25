@@ -2,18 +2,28 @@ kmix:
   decrease_volume:
     name: Decrease Volume
     keys:
-      - Meta+F2
+      - Meta+Shift+F2
       - Volume Down
   increase_volume:
     name: Increase Volume
     keys:
-      - Meta+F3
+      - Meta+Shift+F3
       - Volume Up
   mute:
     name: Mute
     keys:
       - Meta+F1
       - Volume Mute
+  decrease_volume_small:
+    name: Decrease Volume by 1%
+    keys:
+      - Meta+F2
+      - Shift+Volume Down
+  increase_volume_small:
+    name: Increase Volume by 1%
+    keys:
+      - Meta+F3
+      - Shift+Volume Up
 kwin:
   Window Above Other Windows:
     name: Keep Window Above Others
@@ -31,6 +41,35 @@ kwin:
     name: Resize Window
     keys:
       - Meta+#
+  Overview:
+    name: Toggle Overview
+    keys: []
+  Grid View:
+    name: Toggle Grid View
+    keys: []
+  Show Desktop:
+    name: Peek at Desktop
+    keys: []
+  Window Quick Tile Left:
+    name: Quick Tile Window to the Left
+    keys:
+      - Meta+Alt+Left
+  Switch Window Right:
+    name: Switch to Window to the Right
+    keys: []
+  Switch Window Down:
+    name: Switch to Window Below
+    keys: []
+  Window Quick Tile Right:
+    name: Quick Tile Window to the Right
+    keys:
+      - Meta+Alt+Right
+  Switch Window Left:
+    name: Switch to Window to the Left
+    keys: []
+  Switch Window Up:
+    name: Switch to Window Above
+    keys: []
 org.kde.dolphin.desktop:
   _launch:
     name: Dolphin
@@ -57,6 +96,10 @@ plasmashell:
     name: Activate Application Launcher
     keys:
       - Alt+F1
+  next activity:
+    name: Walk through activities
+    keys:
+      - Meta+A
 ksmserver:
   Lock Session:
     name: Lock Session
@@ -67,6 +110,9 @@ KDE Keyboard Layout Switcher:
     name: Switch to Next Keyboard Layout
     keys:
       - Meta+Space
+  Switch to Last-Used Keyboard Layout:
+    name: Switch to Last-Used Keyboard Layout
+    keys: []
 org.kde.spectacle.desktop:
   RectangularRegionScreenShot:
     name: Capture Rectangular Region
