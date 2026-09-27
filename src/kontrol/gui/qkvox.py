@@ -420,7 +420,7 @@ class Dialog(AsyncDialog):
         self.setWindowIcon(QIcon.fromTheme("audio-on"))
 
         self.audio_outputs: list[AudioOutput] = []
-        self.keymap = Keymap(self, [c for c in map(chr, range(ord("A"), ord("Z") + 1))])
+        self.keymap = Keymap(self, [c for c in map(chr, range(ord("1"), ord("9") + 1))])
 
         self.sink_mgr = SinkManager(self)
         self.sysbus = SystemBus()
