@@ -1,9 +1,10 @@
 [project]
 name = "kontrol"
-version = "0.8.9"
+version = "0.9.0"
 description = "A set of tools to configure Plasma 6 (Wayland) in a predictable way"
 requires-python = ">=3.14"
 dependencies = [
+    "annocli",
     "dbus-next>=0.2.3",
     "pyqt6>=6.11.0",
     "pyyaml>=6.0.3",
@@ -11,12 +12,13 @@ dependencies = [
 ]
 
 [project.scripts]
+kbrite         = "kontrol.gui.kbrite:main"
 kombi          = "kontrol.cli.kombi:main"
 konsctl        = "kontrol.cli.konsctl:main"
+kscreen-toggle = "kontrol.cli.kscreen_toggle:main"
+kopy           = "kontrol.gui.kopy:main"
 kwinctl        = "kontrol.cli.kwinctl.main:main"
 kwinjs         = "kontrol.cli.kwinctl.kwinjs_eval:main"
-kscreen-toggle = "kontrol.cli.kscreen_toggle:main"
-kbrite         = "kontrol.gui.kbrite:main"
 qkvox          = "kontrol.gui.qkvox:main"
 quick-wg       = "kontrol.gui.quick_wg:main"
 
@@ -29,6 +31,9 @@ packages = ["src/kontrol"]
 
 [tool.black]
 line-length=99
+
+[tool.uv.sources]
+annocli = { git = "https://github.com/kevwargo/annocli" }
 
 [dependency-groups]
 dev = [
