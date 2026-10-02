@@ -45,8 +45,8 @@ class AsyncDialog(QWidget):
     @classmethod
     async def __exec_async(cls, *args, **kwargs):
         """Instantiate the dialog, start and wait for it to finish its job.
-        It's done in this helper because subclasses often initialize a dbus_next.io.MessageBus
-        which needs a running event loop.
+        It's done like that to allow subclasses to open dbus_next.aio.MessageBus (which needs
+        running event loop) in their constructor.
         """
         await cls(*args, **kwargs)._run()
 
