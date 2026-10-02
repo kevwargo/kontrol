@@ -4,7 +4,6 @@ version = "0.9.0"
 description = "A set of tools to configure Plasma 6 (Wayland) in a predictable way"
 requires-python = ">=3.14"
 dependencies = [
-    "annocli",
     "dbus-next>=0.2.3",
     "pyqt6>=6.11.0",
     "pyyaml>=6.0.3",
@@ -31,9 +30,6 @@ packages = ["src/kontrol"]
 
 [tool.black]
 line-length=99
-
-[tool.uv.sources]
-annocli = { git = "https://github.com/kevwargo/annocli" }
 
 [dependency-groups]
 dev = [

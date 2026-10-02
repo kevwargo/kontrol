@@ -1,38 +1,23 @@
 import os
 import re
-import sys
+from argparse import ArgumentParser
 from pathlib import Path
 
-from annocli import Arg, Namespace, entrypoint
 from PyQt6.QtWidgets import QLabel, QVBoxLayout
 
 from kontrol.utils.qt.dialog import AsyncDialog, Keymap
 
 
-class Args(Namespace):
-    parent: str | None = None
-    args: list[str] | None = Arg(positional=True, nargs="*")
-
-
-@entrypoint
-def main(args: Args):
-    ppid = None
-
-    if args.parent:
-        ppid = _find_parent(args.parent)
-        if not ppid:
-            print(f"must be run from {args.parent}", file=sys.stderr)
-            sys.exit(1)
-
-    print(args)
-
+def main():
+    args = parse_args()
+    ppid = find_parent(args.parent) if args.parent else None
     Kopy.exec(ppid, args)
 
 
 class Kopy(AsyncDialog):
     desktop_filename = "kopy"
 
-    def __init__(self, parent_pid: int | None, args: Args):
+    def __init__(self, parent_pid: int | None, args):
         super().__init__()
 
         self.parent_pid = parent_pid
@@ -43,12 +28,22 @@ class Kopy(AsyncDialog):
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(f"Parent PID: {self.parent_pid}", self))
+        layout.addWidget(
+            QLabel("<ul>" + "".join(f"<li>{p}</li>" for p in args.paths) + "</ul>", self)
+        )
 
         self.setMinimumWidth(320)
         self.setMinimumHeight(240)
 
 
-def _find_parent(name: str) -> int | None:
+def parse_args():
+    p = ArgumentParser()
+    p.add_argument("--parent")
+    p.add_argument("paths", nargs="*")
+    return p.parse_args()
+
+
+def find_parent(name: str) -> int:
     ppid = os.getppid()
     while ppid > 1:
         p = Path("/proc") / str(ppid)
@@ -58,9 +53,11 @@ def _find_parent(name: str) -> int | None:
             elif m := _PPID_RE.search((p / "status").read_text()):
                 ppid = int(m.group(1))
             else:
-                return None
+                break
         except OSError:
-            return None
+            break
+
+    raise RuntimeError(f"must be run from {name}")
 
 
 _PPID_RE = re.compile(r"^PPid:\s*([0-9]+)", re.MULTILINE)
