@@ -75,7 +75,7 @@ function log(msg) {
 }
 
 function wfmt(w) {
-  return `${w.resourceName}(${w.caption})${w.internalId}`;
+  return `${w.resourceName}${w.internalId}`;
 }
 
 function wsfmt(ws) {
