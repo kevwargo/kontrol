@@ -154,13 +154,17 @@ class BTManager(QObject):
             self.DEVICE_IFACE
         )
 
-        name = await iface.get_name()
-        address = await iface.get_address()
-        if not await iface.get_paired():
-            logger.debug(f"Ignoring unpaired BT device {address}({name})")
-            return
+        try:
+            name = await iface.get_name()
+            address = await iface.get_address()
+            if not await iface.get_paired():
+                logger.debug(f"Ignoring unpaired BT device {address}({name})")
+                return
 
-        connected = await iface.get_connected()
+            connected = await iface.get_connected()
+        except DBusError as e:
+            logger.warn(f"Device notify: {e}")
+            return
 
         if dev:
             dev.name = name
