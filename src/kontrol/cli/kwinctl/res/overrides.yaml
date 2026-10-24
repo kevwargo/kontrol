@@ -73,8 +73,7 @@ kwin:
 org.kde.dolphin.desktop:
   _launch:
     name: Dolphin
-    keys:
-      - Meta+X
+    keys: []
 plasmashell:
   cycleNextAction:
     name: Next History Item

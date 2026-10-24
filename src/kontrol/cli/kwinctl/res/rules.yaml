@@ -16,6 +16,11 @@ browser:
   key: Meta+F
   command: brave
   cls: brave-browser
+dolphin:
+  key: Meta+X
+  command: dolphin
+  cls: org.kde.dolphin
+  auto: true
 systemsettings:
   key: Meta+S
   cls: systemsettings
