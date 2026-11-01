@@ -97,8 +97,7 @@ plasmashell:
       - Alt+F1
   next activity:
     name: Walk through activities
-    keys:
-      - Meta+A
+    keys: []
 ksmserver:
   Lock Session:
     name: Lock Session

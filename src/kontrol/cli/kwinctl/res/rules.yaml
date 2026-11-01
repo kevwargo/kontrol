@@ -82,3 +82,7 @@ quick-wg:
   cls: quick-wg
   command: quick-wg
   auto: true
+audacity:
+  key: Meta+A
+  cls: Audacity
+  command: audacity
