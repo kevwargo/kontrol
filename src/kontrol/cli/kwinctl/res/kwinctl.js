@@ -121,9 +121,9 @@ function triggerCommand({ id, cmd }) {
     } else {
       console.warning(`Built-in command ${cmd.builtinId} not found`);
     }
+  } else {
+    selfDBus("RunCommand", id);
   }
-
-  selfDBus("RunCommand", id);
 }
 
 function selfDBus(method, ...args) {
@@ -176,7 +176,7 @@ function onWindowRemove(window) {
   delete rulesByWindowId[window.internalId];
 }
 
-function onWindowActivate(window) {}
+log("JS script initializing ...");
 
 RULES.forEach((r) => {
   log(`binding ${r.key} to rule ${JSON.stringify(r)}`);
@@ -201,5 +201,6 @@ Object.entries(COMMANDS).forEach(([id, cmd]) => {
 workspace.windowList().forEach(onNewWindow);
 
 workspace.windowAdded.connect(onNewWindow);
-workspace.windowActivated.connect(onWindowActivate);
 workspace.windowRemoved.connect(onWindowRemove);
+
+log("JS script initialized, waiting for events ...");

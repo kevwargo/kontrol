@@ -8,7 +8,7 @@ GEN_ENV_MK := ./scripts/gen-env-mk.py
 
 DISTDIR := dist
 export PKG_SOURCE_DIST := $(PKG_NAME)-src-$(PKG_VERSION).tar.zst
-export PKG_RELEASE := 1
+export PKG_RELEASE ?= 1
 
 PACMAN_DIR := pacman
 
@@ -34,6 +34,7 @@ dist-source:
 	tar -caf $(DISTDIR)/$(PKG_SOURCE_DIST) \
 		--exclude-vcs --exclude-vcs-ignores \
 		--exclude configs --exclude $(PACMAN_DIR) --exclude $(RPM_DIR) \
+		--exclude $(DISTDIR) \
 		--transform="s|^\.|$(PKG_NAME)-$(PKG_VERSION)|" .
 
 ## Pacman targets

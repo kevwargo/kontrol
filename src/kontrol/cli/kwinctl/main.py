@@ -142,6 +142,23 @@ class KWinCtl(ServiceInterface):
         elif snippet := cmd.get("snippet"):
             asyncio.create_task(self._exec_snippet(cmd_id, snippet))
 
+    async def log_debug(self, msg):
+        await self.emit_log(self.env.log.debug, msg)
+
+    async def log_info(self, msg):
+        await self.emit_log(self.env.log.info, msg)
+
+    async def log_error(self, msg):
+        await self.emit_log(self.env.log.error, msg)
+
+    async def emit_log(self, fn, msg):
+        try:
+            prefix = f"[{SCRIPT_UNIQUE_NAME!r} loaded:{await self.bus.is_kwin_script_loaded()}] "
+        except Exception as exc:
+            prefix = f"[{SCRIPT_UNIQUE_NAME!r} load check error: {type(exc).__name__}({exc})] "
+
+        fn(prefix + msg)
+
     async def run(self):
         self._register_signals()
 
@@ -150,16 +167,16 @@ class KWinCtl(ServiceInterface):
             await self._remap_keys()
             await self._load_main_script()
 
-            self.env.log.debug("Service is running. Press Ctrl+C to exit.")
+            await self.log_debug("Service is running. Press Ctrl+C to exit.")
             await self._stop_event.wait()
 
-            self.env.log.debug("Run loop exiting...")
+            await self.log_debug("Run loop exiting...")
         finally:
             await self._shutdown()
 
     async def _show_prompt(self, prompt: str):
         await self.bus.krunner_query(prompt)
-        self.env.log.info(f"Showed prompt {prompt!r}")
+        await self.log_info(f"Showed prompt {prompt!r}")
 
     async def _exec_snippet(self, cmd_id: str, snippet: dict):
         cmd = snippet.get("cmd")
@@ -169,7 +186,7 @@ class KWinCtl(ServiceInterface):
             out, err = await p.communicate()
             text = out.decode()
             if p.returncode != 0:
-                self.env.log.error(
+                await self.log_error(
                     f"Command {cmd!r} failed with code {p.returncode}. out:{out} err:{err}"
                 )
                 return
@@ -216,7 +233,7 @@ class KWinCtl(ServiceInterface):
 
     async def _register_dbus_service(self):
         await self.bus.export_name(self.NAME, "/", self)
-        self.env.log.info(f"{self.NAME} D-Bus service running...")
+        await self.log_info(f"{self.NAME} D-Bus service running...")
 
     async def _load_main_script(self):
         with NamedTemporaryFile(mode="w+", prefix="kwinctl-", suffix=".js") as f:
@@ -235,9 +252,9 @@ class KWinCtl(ServiceInterface):
             await self.main_script.call_run()
 
     async def _cleanup_kglobalaccel(self):
-        self.env.log.info("calling cleanUp on org.kde.kglobalaccel /component/kwin")
+        await self.log_info("calling cleanUp on org.kde.kglobalaccel /component/kwin")
         if await self.bus.kgl_cleanup_kwin():
-            self.env.log.info("leftover KWin shortcuts cleaned up")
+            await self.log_info("leftover KWin shortcuts cleaned up")
 
     async def _load_script_file(self, path: str):
         script_id = (
@@ -253,7 +270,7 @@ class KWinCtl(ServiceInterface):
         if script_id < 0:
             raise RuntimeError(f"KWin script {SCRIPT_UNIQUE_NAME!r} is already running")
 
-        self.env.log.debug(f"loaded script id: {script_id}")
+        await self.log_debug(f"loaded script id: {script_id}")
 
         return await self.bus.kwin_load_script(script_id)
 
@@ -264,7 +281,7 @@ class KWinCtl(ServiceInterface):
             override = self.hotkeys.overrides.get((s.component_id, s.action_id))
             if override:
                 keys = set(override["keys"])
-                self.env.log.info(f"Found override for {s}: {keys}")
+                await self.log_info(f"Found override for {s}: {keys}")
             else:
                 keys.difference_update(self.hotkeys.bindings)
 
@@ -273,14 +290,14 @@ class KWinCtl(ServiceInterface):
                 self.remaps.append(s)
 
         for remap in self.remaps:
-            self.env.log.info(f"Remapping {remap}")
+            await self.log_info(f"Remapping {remap}")
             await self.bus.kgl_set_keys(
                 remap.to_dbus(), [[k.to_dbus()] for k in remap.remapped_keys]
             )
 
     async def _restore_remaps(self):
         for remap in self.remaps:
-            self.env.log.info(f"Restoring {remap}")
+            await self.log_info(f"Restoring {remap}")
             await self.bus.kgl_set_keys(
                 remap.to_dbus(), [[k.to_dbus()] for k in remap.active_keys]
             )
@@ -290,40 +307,40 @@ class KWinCtl(ServiceInterface):
             return
         self._shutting_down = True
 
-        self.env.log.info(f"Shutdown initiated (signal={sig})")
+        await self.log_info(f"Shutdown initiated (signal={sig})")
 
         try:
             if self.main_script is not None:
                 try:
-                    self.env.log.info("Stopping KWin script...")
+                    await self.log_info("Stopping KWin script...")
                     await self.main_script.call_stop()
                 except Exception as e:
-                    self.env.log.error(f"Error stopping script: {e}")
+                    await self.log_error(f"Error stopping script: {e}")
             if self.bus is not None:
                 try:
                     await self._cleanup_kglobalaccel()
                 except Exception as e:
-                    self.env.log.error(f"Error cleaning up kglobalaccel: {e}")
+                    await self.log_error(f"Error cleaning up kglobalaccel: {e}")
 
                 try:
                     await self._restore_remaps()
                 except Exception as e:
-                    self.env.log.error(f"Restoring remapped keys: {e}")
+                    await self.log_error(f"Restoring remapped keys: {e}")
 
                 try:
-                    self.env.log.info("Releasing D-Bus name...")
+                    await self.log_info("Releasing D-Bus name...")
                     await self.bus.release_name(self.NAME)
                 except Exception as e:
-                    self.env.log.error(f"Error releasing name: {e}")
+                    await self.log_error(f"Error releasing name: {e}")
 
                 try:
-                    self.env.log.info("Disconnecting from D-Bus...")
+                    await self.log_info("Disconnecting from D-Bus...")
                     self.bus.disconnect()
                 except Exception as e:
-                    self.env.log.error(f"Error disconnecting bus: {e}")
+                    await self.log_error(f"Error disconnecting bus: {e}")
         finally:
             self._stop_event.set()
-            self.env.log.info("Shutdown complete.")
+            await self.log_info("Shutdown complete.")
 
 
 class Bus(SessionBus):
@@ -353,6 +370,10 @@ class Bus(SessionBus):
             f"/Scripting/Script{script_id}",
             "org.kde.kwin.Script",
         )
+
+    async def is_kwin_script_loaded(self):
+        iface = await self.iface("org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting")
+        return await iface.call_is_script_loaded(SCRIPT_UNIQUE_NAME)
 
     async def krunner_query(self, prompt: str):
         iface = await self.iface("org.kde.krunner", "/App", "org.kde.krunner.App")
